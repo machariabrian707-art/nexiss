@@ -76,6 +76,7 @@ async def create_document(
         content_type=payload.content_type,
         storage_key=payload.storage_key,
         status=DocumentStatus.uploaded,
+        declared_type=payload.declared_type.value if payload.declared_type else None,
     )
     db.add(document)
     await db.commit()
@@ -90,16 +91,14 @@ async def list_documents(
     db: AsyncSession = Depends(get_db_session),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    doc_type: str | None = Query(default=None, description="Filter by confirmed_type"),
 ) -> list[DocumentResponse]:
-    rows = await db.execute(
-        select(Document)
-        .where(Document.org_id == auth.active_org_id)
-        .order_by(Document.created_at.desc())
-        .limit(limit)
-        .offset(offset)
-    )
-    documents = rows.scalars().all()
-    return [DocumentResponse.model_validate(item) for item in documents]
+    q = select(Document).where(Document.org_id == auth.active_org_id)
+    if doc_type:
+        q = q.where(Document.confirmed_type == doc_type)
+    q = q.order_by(Document.created_at.desc()).limit(limit).offset(offset)
+    rows = await db.execute(q)
+    return [DocumentResponse.model_validate(item) for item in rows.scalars().all()]
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)

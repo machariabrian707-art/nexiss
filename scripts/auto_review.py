@@ -1,88 +1,165 @@
+"""auto_review.py — Nexiss automated code review runner.
+
+Scans recently changed Python files in the repo and asks OpenAI
+to review them against the Nexiss coding standards.
+
+Usage (from repo root):
+    python scripts/auto_review.py [--path src/nexiss] [--model gpt-4o]
+
+Requires:
+    OPENAI_API_KEY environment variable (or in .env file)
+"""
+from __future__ import annotations
+
+import argparse
 import os
-import time
+import subprocess
+import sys
 import json
 from pathlib import Path
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from openai import OpenAI
 
-# Load config
-CONFIG_PATH = Path("scripts/review_config.json")
-with open(CONFIG_PATH, "r") as f:
-    CFG = json.load(f)
+try:
+    import httpx
+except ImportError:
+    print("httpx not installed. Run: pip install httpx")
+    sys.exit(1)
 
-# OpenAI setup
-client = OpenAI(api_key=os.getenv("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"))
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass  # python-dotenv is optional
 
-INCLUDE_EXT = tuple(CFG["include_extensions"])
-IGNORE_DIRS = set(CFG["ignore_dirs"])
-MAX_CHARS = CFG["max_chars"]
 
-def should_ignore(path):
-    return any(part in IGNORE_DIRS for part in path.parts)
+NEXISS_REVIEW_SYSTEM_PROMPT = """
+You are a senior backend engineer reviewing code for the Nexiss Document Intelligence SaaS platform.
 
-def read_file(path):
-    try:
-        return path.read_text()[:MAX_CHARS]
-    except:
-        return "Error reading file"
+Nexiss is a multi-tenant FastAPI + PostgreSQL + Celery system that:
+- Accepts document uploads (images, PDFs, scans)
+- Runs OCR + LLM extraction to turn them into structured data
+- Classifies documents into ~50 types (invoices, medical records, contracts, etc.)
+- Links entities (patient names, vendor names) across documents
+- Exports to CSV/XLSX spreadsheets
+- Provides analytics and an admin dashboard
 
-def review_code(file_path):
-    code = read_file(file_path)
+When reviewing, check for:
+1. Multi-tenancy violations (any query missing org_id scoping = critical bug)
+2. Missing async/await on database calls
+3. Unhandled exceptions that could crash a Celery worker
+4. Hard-coded credentials or secrets
+5. Missing input validation
+6. Logic that could cause wrong document type to be used for extraction
+7. Performance issues (N+1 queries, missing indexes)
+8. Any code that exposes automation internals to users (they must never see it)
 
-    prompt = f"""
-{CFG['review_prompt']}
-
-FILE: {file_path}
-
-CODE:
-{code}
+Format your response as JSON:
+{
+  "issues": [
+    {"severity": "critical|high|medium|low", "line": <int or null>, "message": "<text>"}
+  ],
+  "summary": "<one paragraph overall assessment>",
+  "approved": <true|false>
+}
 """
 
+
+def get_changed_files(path: str) -> list[Path]:
+    """Get list of Python files changed vs main branch."""
     try:
-        response = client.chat.completions.create(
-            model=CFG["model"],
-            messages=[{"role": "user", "content": prompt}],
-            temperature=CFG["temperature"],
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "HEAD"],
+            capture_output=True, text=True, check=True
         )
-
-        output = response.choices[0].message.content
-
-        print("\n" + "="*80)
-        print(f"REVIEWING: {file_path}")
-        print("="*80)
-        print(output)
-        print("="*80 + "\n")
-
-    except Exception as e:
-        print("OpenAI Error:", e)
+        changed = [
+            Path(f) for f in result.stdout.splitlines()
+            if f.endswith(".py") and f.startswith(path.lstrip("/"))
+        ]
+        return [f for f in changed if f.exists()]
+    except subprocess.CalledProcessError:
+        # Fallback: scan all .py files in path
+        return list(Path(path).rglob("*.py"))
 
 
-class Handler(FileSystemEventHandler):
-    def on_modified(self, event):
-        if event.is_directory:
-            return
+def review_file(file_path: Path, api_key: str, model: str) -> dict:
+    """Send file content to OpenAI for review."""
+    content = file_path.read_text(encoding="utf-8")
+    if not content.strip():
+        return {"issues": [], "summary": "Empty file — skipped.", "approved": True}
 
-        path = Path(event.src_path)
+    messages = [
+        {"role": "system", "content": NEXISS_REVIEW_SYSTEM_PROMPT},
+        {"role": "user", "content": f"Review this file: {file_path}\n\n```python\n{content}\n```"},
+    ]
 
-        if should_ignore(path):
-            return
+    with httpx.Client(timeout=60) as client:
+        resp = client.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {api_key}"},
+            json={
+                "model": model,
+                "messages": messages,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        resp.raise_for_status()
+        body = resp.json()
 
-        if path.suffix in INCLUDE_EXT:
-            review_code(path)
+    raw = body["choices"][0]["message"]["content"]
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return {"issues": [], "summary": raw, "approved": False}
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Nexiss automated code review")
+    parser.add_argument("--path", default="src/nexiss", help="Path to scan (default: src/nexiss)")
+    parser.add_argument("--model", default="gpt-4o", help="OpenAI model (default: gpt-4o)")
+    parser.add_argument("--all", action="store_true", help="Review ALL .py files, not just changed ones")
+    args = parser.parse_args()
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        print("ERROR: OPENAI_API_KEY not set. Add it to .env or export it.")
+        sys.exit(1)
+
+    if args.all:
+        files = list(Path(args.path).rglob("*.py"))
+    else:
+        files = get_changed_files(args.path)
+
+    if not files:
+        print("No Python files to review.")
+        return
+
+    print(f"Reviewing {len(files)} file(s) with {args.model}...\n")
+    any_critical = False
+
+    for f in files:
+        print(f"--- {f} ---")
+        result = review_file(f, api_key, args.model)
+        issues = result.get("issues", [])
+        approved = result.get("approved", True)
+        summary = result.get("summary", "")
+
+        for issue in issues:
+            severity = issue.get("severity", "info").upper()
+            line = issue.get("line")
+            msg = issue.get("message", "")
+            loc = f" (line {line})" if line else ""
+            print(f"  [{severity}]{loc} {msg}")
+            if severity == "CRITICAL":
+                any_critical = True
+
+        print(f"  Summary: {summary}")
+        print(f"  Approved: {approved}\n")
+
+    if any_critical:
+        print("CRITICAL issues found. Please fix before merging.")
+        sys.exit(1)
+    else:
+        print("Review complete. No critical issues.")
 
 
 if __name__ == "__main__":
-    observer = Observer()
-    observer.schedule(Handler(), ".", recursive=True)
-    observer.start()
-
-    print("AI Overseer running...")
-
-    try:
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-
-    observer.join()
+    main()

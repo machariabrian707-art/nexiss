@@ -1,3 +1,9 @@
+"""LLM extraction service.
+
+Key improvement over the original: the prompt is now document-type-aware.
+If we know (or can infer) the document type, we ask the LLM to extract the
+exact fields that matter for that type — not just generic JSON.
+"""
 from __future__ import annotations
 
 import json
@@ -7,9 +13,72 @@ import httpx
 
 from nexiss.core.config import get_settings
 from nexiss.db.models.document import Document
+from nexiss.db.models.document_type import DocumentType
+from nexiss.schemas.document import DOC_TYPE_SCHEMA_MAP
 from nexiss.services.ai.types import LLMExtractionResult
 
 settings = get_settings()
+
+
+# ---------------------------------------------------------------------------
+# Prompt templates per document category
+# ---------------------------------------------------------------------------
+
+_BASE_PROMPT = """\
+You are Nexiss, a document intelligence system.
+Extract structured data from the OCR text below and return ONLY valid JSON — no markdown, no commentary.
+
+File name: {file_name}
+Content type: {content_type}
+Document type: {doc_type}
+"""
+
+_TYPE_INSTRUCTIONS: dict[str, str] = {
+    "invoice": "Extract: vendor_name, vendor_address, invoice_number, invoice_date, due_date, line_items (array of {{description, quantity, unit_price, total}}), subtotal, tax, total_amount, currency, payment_terms.",
+    "receipt": "Extract: vendor_name, date, items (array of {{name, price}}), subtotal, tax, total_amount, currency, payment_method.",
+    "patient_record": "Extract: patient_name, patient_id, date_of_birth, visit_date, doctor_name, facility, diagnosis (array), medications (array of {{name, dose, frequency}}), lab_values (object), notes.",
+    "prescription": "Extract: patient_name, doctor_name, date, medications (array of {{name, dose, frequency, duration}}), notes.",
+    "lab_result": "Extract: patient_name, patient_id, doctor_name, facility, date, tests (array of {{test_name, value, unit, reference_range, flag}}), notes.",
+    "contract": "Extract: document_title, parties (array), effective_date, expiry_date, jurisdiction, key_clauses (array of short summaries), obligations (array), risk_flags (array).",
+    "agreement": "Extract: document_title, parties (array), effective_date, expiry_date, jurisdiction, key_clauses (array of short summaries), obligations (array), risk_flags (array).",
+    "cv_resume": "Extract: full_name, email, phone, address, skills (array), work_experience (array of {{company, role, start_date, end_date, description}}), education (array of {{institution, degree, year}}), certifications (array).",
+    "employee_record": "Extract: employee_name, employee_id, job_title, department, hire_date, salary, currency, skills (array), notes.",
+    "national_id": "Extract: full_name, document_number, nationality, date_of_birth, issue_date, expiry_date, issuing_authority.",
+    "passport": "Extract: full_name, document_number, nationality, date_of_birth, issue_date, expiry_date, issuing_authority.",
+    "bill_of_lading": "Extract: shipper, consignee, tracking_number, origin, destination, ship_date, estimated_delivery, items (array of {{description, quantity, weight}}), total_weight, total_value.",
+    "bank_statement": "Extract: account_holder, account_number, bank_name, statement_period_start, statement_period_end, opening_balance, closing_balance, transactions (array of {{date, description, debit, credit, balance}}).",
+}
+
+_DEFAULT_INSTRUCTION = "Extract all key fields, dates, names, amounts, and identifiers as a structured JSON object."
+
+
+def _build_prompt(document: Document, ocr_text: str, doc_type: str) -> str:
+    instruction = _TYPE_INSTRUCTIONS.get(doc_type, _DEFAULT_INSTRUCTION)
+    return (
+        _BASE_PROMPT.format(
+            file_name=document.file_name,
+            content_type=document.content_type,
+            doc_type=doc_type,
+        )
+        + "\n"
+        + instruction
+        + "\n\nOCR TEXT:\n"
+        + ocr_text
+    )
+
+
+_CLASSIFICATION_PROMPT = """\
+You are Nexiss, a document intelligence system.
+Given the OCR text below, determine the document type.
+
+Respond ONLY with valid JSON in this format:
+{{"document_type": "<type>", "confidence": <0.0-1.0>}}
+
+Valid types: {valid_types}
+
+OCR TEXT:
+{ocr_text}
+"""
 
 
 class LLMExtractionService:
@@ -20,16 +89,29 @@ class LLMExtractionService:
             return self._openai_extract(document, ocr_text)
         raise ValueError(f"Unsupported LLM provider: {settings.llm_provider}")
 
+    def classify(self, ocr_text: str) -> tuple[str, float]:
+        """Return (document_type, confidence) by asking the LLM to classify the text."""
+        if settings.llm_provider == "mock":
+            return "unknown", 0.5
+        if settings.llm_provider == "openai":
+            return self._openai_classify(ocr_text)
+        return "unknown", 0.5
+
+    # ------------------------------------------------------------------
+    # Mock
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _mock_extract(document: Document, ocr_text: str) -> LLMExtractionResult:
-        word_count = len([part for part in ocr_text.split(" ") if part.strip()])
+        word_count = len([p for p in ocr_text.split(" ") if p.strip()])
         tokens_input = max(word_count, 1)
         tokens_output = max(tokens_input // 3, 1)
+        doc_type = document.declared_type or "unknown"
         data = {
-            "document_type": "generic",
+            "document_type": doc_type,
             "file_name": document.file_name,
             "content_type": document.content_type,
-            "summary": f"Extracted with mock model from {tokens_input} input tokens.",
+            "summary": f"Mock extraction for type '{doc_type}' from {tokens_input} tokens.",
         }
         return LLMExtractionResult(
             extracted_data=data,
@@ -38,19 +120,18 @@ class LLMExtractionService:
             tokens_output=tokens_output,
         )
 
-    @staticmethod
-    def _openai_extract(document: Document, ocr_text: str) -> LLMExtractionResult:
+    # ------------------------------------------------------------------
+    # OpenAI
+    # ------------------------------------------------------------------
+
+    def _openai_extract(self, document: Document, ocr_text: str) -> LLMExtractionResult:
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
-        prompt = (
-            "Extract structured JSON from this OCR text.\n"
-            "Return ONLY valid JSON.\n\n"
-            f"File name: {document.file_name}\n"
-            f"Content type: {document.content_type}\n\n"
-            f"OCR:\n{ocr_text}\n"
-        )
+        # Use declared_type if the user told us; otherwise classify first.
+        doc_type = document.declared_type or document.confirmed_type or "unknown"
 
+        prompt = _build_prompt(document, ocr_text, doc_type)
         url = f"{settings.openai_base_url.rstrip('/')}/responses"
         payload = {
             "model": settings.llm_model,
@@ -81,3 +162,36 @@ class LLMExtractionService:
             tokens_input=max(tokens_input, 1),
             tokens_output=max(tokens_output, 1),
         )
+
+    def _openai_classify(self, ocr_text: str) -> tuple[str, float]:
+        """Ask the LLM to classify the document type from OCR text."""
+        if not settings.openai_api_key:
+            return "unknown", 0.0
+
+        valid_types = ", ".join([t.value for t in DocumentType])
+        prompt = _CLASSIFICATION_PROMPT.format(
+            valid_types=valid_types,
+            ocr_text=ocr_text[:3000],  # cap at 3k chars to save tokens
+        )
+        url = f"{settings.openai_base_url.rstrip('/')}/responses"
+        payload = {
+            "model": settings.llm_model,
+            "input": prompt,
+            "text": {"format": {"type": "json_object"}},
+        }
+        headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
+
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                body = resp.json()
+            output_text = ""
+            for item in body.get("output", []):
+                for content in item.get("content", []):
+                    if content.get("type") == "output_text":
+                        output_text += content.get("text", "")
+            result = json.loads(output_text)
+            return result.get("document_type", "unknown"), float(result.get("confidence", 0.5))
+        except Exception:
+            return "unknown", 0.0
