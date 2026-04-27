@@ -36,7 +36,8 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { token, user } = useAuthStore()
   if (!token) return <Navigate to="/login" replace />
-  if (!user?.is_superadmin) return <Navigate to="/app" replace />
+  // Use is_superuser (matches backend field)
+  if (!user?.is_superuser) return <Navigate to="/app" replace />
   return <>{children}</>
 }
 

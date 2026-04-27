@@ -1,19 +1,19 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
-interface User {
+export interface AuthUser {
   id: string
   email: string
   full_name: string
-  is_superadmin: boolean
+  is_superuser: boolean   // matches backend field name
 }
 
 interface AuthState {
   token: string | null
-  user: User | null
+  user: AuthUser | null
   activeOrgId: string | null
   orgs: Array<{ id: string; name: string; slug: string }>
-  setAuth: (token: string, user: User) => void
+  setAuth: (token: string, user: AuthUser) => void
   setActiveOrg: (orgId: string) => void
   setOrgs: (orgs: AuthState['orgs']) => void
   logout: () => void
