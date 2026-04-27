@@ -1,56 +1,59 @@
-"""Super Admin API — platform owner (you) can see everything.
+"""Super Admin API.
 
-Protected by a separate admin role check: only users with role=admin
-in any org membership AND the special NEXISS_ADMIN_SECRET header.
+This router is for the PLATFORM owner (you) — not regular org users.
+It provides platform-wide oversight:
+  - All organisations
+  - All documents across all orgs
+  - Platform-level processing stats
+  - Entity review queue (low-confidence matches)
 
-Endpoints:
-  GET  /admin/stats          - platform-wide overview
-  GET  /admin/orgs           - all organisations
-  GET  /admin/orgs/{org_id}/documents - all docs for an org
-  GET  /admin/users          - all users
-  GET  /admin/documents      - all documents across all orgs
-  GET  /admin/documents/{id} - single document (any org)
+Access is gated by the `is_superadmin` flag on the User model.
+This flag is set manually in the DB for now (migration adds the column).
 """
 from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nexiss.api.deps.auth import AuthContext, require_org_context
-from nexiss.core.config import get_settings
+from nexiss.api.deps.auth import get_current_user
 from nexiss.db.models.document import Document, DocumentStatus
+from nexiss.db.models.entity import Entity, EntityAlias
+from nexiss.db.models.org_membership import OrgMembership
 from nexiss.db.models.organization import Organization
-from nexiss.db.models.usage_event import UsageEvent
+from nexiss.db.models.processing_job import ProcessingJob, ProcessingJobStatus
 from nexiss.db.models.user import User
 from nexiss.db.session import get_db_session
-from nexiss.schemas.document import DocumentResponse
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
 
-router = APIRouter(prefix="/admin", tags=["admin"])
-settings = get_settings()
+router = APIRouter(prefix="/admin", tags=["super-admin"])
 
 
-# ---------------------------------------------------------------------------
-# Admin guard — must send the secret header
-# ---------------------------------------------------------------------------
-
-async def require_admin_secret(
-    x_admin_secret: str | None = Header(default=None, alias="X-Admin-Secret"),
-) -> None:
-    expected = settings.nexiss_admin_secret
-    if not expected or x_admin_secret != expected:
+# ---------- Auth guard ----------
+async def require_superadmin(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db_session),
+) -> User:
+    if not getattr(current_user, "is_superadmin", False):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access denied",
+            detail="Super-admin access required",
         )
+    return current_user
 
 
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
+# ---------- Response schemas ----------
+class OrgSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    org_id: UUID
+    name: str
+    created_at: datetime
+    member_count: int
+    document_count: int
+
 
 class PlatformStats(BaseModel):
     total_orgs: int
@@ -59,144 +62,155 @@ class PlatformStats(BaseModel):
     documents_completed: int
     documents_failed: int
     documents_processing: int
-    total_pages_processed: int
 
 
-class OrgSummary(BaseModel):
-    org_id: UUID
-    name: str
-    slug: str
-    created_at: str
-
-
-class UserSummary(BaseModel):
+class AdminDocumentRow(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
     id: UUID
-    email: str
-    full_name: str | None
-    is_active: bool
-    created_at: str
+    org_id: UUID
+    file_name: str
+    status: DocumentStatus
+    confirmed_type: str | None
+    declared_type: str | None
+    page_count: int | None
+    created_at: datetime
 
 
-# ---------------------------------------------------------------------------
-# Endpoints
-# ---------------------------------------------------------------------------
+class EntityReviewItem(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    entity_id: UUID
+    org_id: UUID
+    canonical_name: str
+    entity_kind: str
+    candidate_match_id: str  # the UUID stored after "review:" prefix
+    created_at: datetime
 
-@router.get("/stats", response_model=PlatformStats, dependencies=[Depends(require_admin_secret)])
-async def get_platform_stats(
+
+# ---------- Endpoints ----------
+@router.get("/stats", response_model=PlatformStats)
+async def platform_stats(
+    _: User = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db_session),
 ) -> PlatformStats:
-    """Platform-wide metrics — the admin dashboard overview."""
-    total_orgs = (await db.execute(select(func.count()).select_from(Organization))).scalar_one()
-    total_users = (await db.execute(select(func.count()).select_from(User))).scalar_one()
-    total_docs = (await db.execute(select(func.count()).select_from(Document))).scalar_one()
+    total_orgs = (await db.execute(select(func.count(Organization.org_id)))).scalar_one()
+    total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
+    total_docs = (await db.execute(select(func.count(Document.id)))).scalar_one()
 
-    completed = (await db.execute(
-        select(func.count()).select_from(Document).where(Document.status == DocumentStatus.completed)
-    )).scalar_one()
-    failed = (await db.execute(
-        select(func.count()).select_from(Document).where(Document.status == DocumentStatus.failed)
-    )).scalar_one()
-    processing = (await db.execute(
-        select(func.count()).select_from(Document).where(Document.status == DocumentStatus.processing)
-    )).scalar_one()
-    pages = (await db.execute(
-        select(func.coalesce(func.sum(Document.page_count), 0)).select_from(Document)
-    )).scalar_one()
+    status_rows = await db.execute(
+        select(Document.status, func.count(Document.id)).group_by(Document.status)
+    )
+    status_counts = {s.value: c for s, c in status_rows.all()}
 
     return PlatformStats(
         total_orgs=total_orgs,
         total_users=total_users,
         total_documents=total_docs,
-        documents_completed=completed,
-        documents_failed=failed,
-        documents_processing=processing,
-        total_pages_processed=int(pages),
+        documents_completed=status_counts.get(DocumentStatus.completed.value, 0),
+        documents_failed=status_counts.get(DocumentStatus.failed.value, 0),
+        documents_processing=status_counts.get(DocumentStatus.processing.value, 0),
     )
 
 
-@router.get("/orgs", response_model=list[OrgSummary], dependencies=[Depends(require_admin_secret)])
+@router.get("/orgs", response_model=list[OrgSummary])
 async def list_all_orgs(
+    _: User = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db_session),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db_session),
 ) -> list[OrgSummary]:
-    result = await db.execute(
+    orgs = (await db.execute(
         select(Organization).order_by(Organization.created_at.desc()).limit(limit).offset(offset)
-    )
-    orgs = result.scalars().all()
-    return [
-        OrgSummary(
-            org_id=o.org_id,
-            name=o.name,
-            slug=o.slug,
-            created_at=o.created_at.isoformat(),
-        )
-        for o in orgs
-    ]
+    )).scalars().all()
+
+    result = []
+    for org in orgs:
+        member_count = (await db.execute(
+            select(func.count(OrgMembership.user_id)).where(OrgMembership.org_id == org.org_id)
+        )).scalar_one()
+        doc_count = (await db.execute(
+            select(func.count(Document.id)).where(Document.org_id == org.org_id)
+        )).scalar_one()
+        result.append(OrgSummary(
+            org_id=org.org_id,
+            name=org.name,
+            created_at=org.created_at,
+            member_count=member_count,
+            document_count=doc_count,
+        ))
+    return result
 
 
-@router.get("/orgs/{org_id}/documents", response_model=list[DocumentResponse], dependencies=[Depends(require_admin_secret)])
-async def list_org_documents(
-    org_id: UUID,
-    limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    doc_type: str | None = Query(default=None),
-    db: AsyncSession = Depends(get_db_session),
-) -> list[DocumentResponse]:
-    q = select(Document).where(Document.org_id == org_id)
-    if doc_type:
-        q = q.where(Document.confirmed_type == doc_type)
-    q = q.order_by(Document.created_at.desc()).limit(limit).offset(offset)
-    result = await db.execute(q)
-    return [DocumentResponse.model_validate(d) for d in result.scalars().all()]
-
-
-@router.get("/users", response_model=list[UserSummary], dependencies=[Depends(require_admin_secret)])
-async def list_all_users(
-    limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
-    db: AsyncSession = Depends(get_db_session),
-) -> list[UserSummary]:
-    result = await db.execute(
-        select(User).order_by(User.created_at.desc()).limit(limit).offset(offset)
-    )
-    return [
-        UserSummary(
-            id=u.id,
-            email=u.email,
-            full_name=u.full_name,
-            is_active=u.is_active,
-            created_at=u.created_at.isoformat(),
-        )
-        for u in result.scalars().all()
-    ]
-
-
-@router.get("/documents", response_model=list[DocumentResponse], dependencies=[Depends(require_admin_secret)])
+@router.get("/documents", response_model=list[AdminDocumentRow])
 async def list_all_documents(
+    _: User = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db_session),
+    org_id: UUID | None = Query(default=None),
+    doc_type: str | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
-    doc_type: str | None = Query(default=None),
-    status: str | None = Query(default=None),
-    db: AsyncSession = Depends(get_db_session),
-) -> list[DocumentResponse]:
-    q = select(Document)
+) -> list[AdminDocumentRow]:
+    stmt = select(Document).order_by(Document.created_at.desc()).limit(limit).offset(offset)
+    if org_id:
+        stmt = stmt.where(Document.org_id == org_id)
     if doc_type:
-        q = q.where(Document.confirmed_type == doc_type)
-    if status:
-        q = q.where(Document.status == status)
-    q = q.order_by(Document.created_at.desc()).limit(limit).offset(offset)
-    result = await db.execute(q)
-    return [DocumentResponse.model_validate(d) for d in result.scalars().all()]
+        stmt = stmt.where(
+            (Document.confirmed_type == doc_type) | (Document.declared_type == doc_type)
+        )
+    rows = (await db.execute(stmt)).scalars().all()
+    return [AdminDocumentRow.model_validate(d) for d in rows]
 
 
-@router.get("/documents/{document_id}", response_model=DocumentResponse, dependencies=[Depends(require_admin_secret)])
-async def get_any_document(
-    document_id: UUID,
+@router.get("/entity-review", response_model=list[EntityReviewItem])
+async def entity_review_queue(
+    _: User = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db_session),
-) -> DocumentResponse:
-    result = await db.execute(select(Document).where(Document.id == document_id))
-    document = result.scalar_one_or_none()
-    if document is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
-    return DocumentResponse.model_validate(document)
+    limit: int = Query(default=100, ge=1, le=500),
+) -> list[EntityReviewItem]:
+    """Returns entities flagged for human review (low-confidence fuzzy match)."""
+    review_aliases = (await db.execute(
+        select(EntityAlias)
+        .where(EntityAlias.alias.startswith("review:"))
+        .limit(limit)
+    )).scalars().all()
+
+    result = []
+    for alias in review_aliases:
+        entity = await db.get(Entity, alias.entity_id)
+        if entity:
+            result.append(EntityReviewItem(
+                entity_id=entity.id,
+                org_id=entity.org_id,
+                canonical_name=entity.canonical_name,
+                entity_kind=entity.entity_kind,
+                candidate_match_id=alias.alias.removeprefix("review:"),
+                created_at=entity.created_at,
+            ))
+    return result
+
+
+@router.post("/entity-review/{entity_id}/merge")
+async def merge_entity(
+    entity_id: UUID,
+    target_id: UUID = Query(description="The entity to merge INTO (keep this one)"),
+    _: User = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db_session),
+) -> dict:
+    """Merge a review-flagged entity into the target canonical entity."""
+    from nexiss.db.models.entity import DocumentEntity
+    from sqlalchemy import update, delete
+
+    # Re-point all document links
+    await db.execute(
+        update(DocumentEntity)
+        .where(DocumentEntity.entity_id == entity_id)
+        .values(entity_id=target_id)
+    )
+    # Delete the duplicate entity + its aliases
+    await db.execute(
+        delete(EntityAlias).where(EntityAlias.entity_id == entity_id)
+    )
+    await db.execute(
+        delete(Entity).where(Entity.id == entity_id)
+    )
+    await db.commit()
+    return {"merged": str(entity_id), "into": str(target_id)}
