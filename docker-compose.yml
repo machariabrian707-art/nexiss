@@ -1,96 +1,106 @@
-version: '3.9'
+# Nexiss — Full stack Docker Compose
+# Starts: postgres, redis, API, celery worker, frontend
+#
+# Usage:
+#   docker compose up --build
+#   docker compose up --build api worker   (no frontend)
+#
+# Override env vars by creating a .env file (see .env.example)
 
 services:
-  # ── PostgreSQL ─────────────────────────────────────────
-  db:
-    image: postgres:16-alpine
+
+  # ── Infrastructure ────────────────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: nexiss-postgres
     restart: unless-stopped
     environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: nexiss
-      POSTGRES_USER: nexiss
-      POSTGRES_PASSWORD: nexiss_dev
-    volumes:
-      - pgdata:/var/lib/postgresql/data
     ports:
-      - '5432:5432'
+      - "5432:5432"
+    volumes:
+      - nexiss_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U nexiss']
+      test: ["CMD-SHELL", "pg_isready -U postgres -d nexiss"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # ── Redis ──────────────────────────────────────────────
   redis:
     image: redis:7-alpine
+    container_name: nexiss-redis
     restart: unless-stopped
     ports:
-      - '6379:6379'
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - nexiss_redis_data:/data
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  # ── FastAPI backend ────────────────────────────────────
-  backend:
+  # ── Backend API ───────────────────────────────────────────
+  api:
     build:
       context: .
-      dockerfile: Dockerfile
+      target: api
+    container_name: nexiss-api
     restart: unless-stopped
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://nexiss:nexiss_dev@db:5432/nexiss
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/nexiss
       REDIS_URL: redis://redis:6379/0
+      ENVIRONMENT: production
+    ports:
+      - "8000:8000"
     depends_on:
-      db:
+      postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - '8000:8000'
-    volumes:
-      - ./src:/app/src
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
-  # ── Celery worker ──────────────────────────────────────
+  # ── Celery Worker ─────────────────────────────────────────
   worker:
     build:
       context: .
-      dockerfile: Dockerfile
+      target: worker
+    container_name: nexiss-worker
     restart: unless-stopped
-    command: celery -A nexiss.worker.celery_app worker --loglevel=info --concurrency=4
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://nexiss:nexiss_dev@db:5432/nexiss
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/nexiss
       REDIS_URL: redis://redis:6379/0
     depends_on:
-      - backend
-      - redis
-      - db
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_healthy
 
-  # ── Celery beat (scheduler) ────────────────────────────
-  beat:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    restart: unless-stopped
-    command: celery -A nexiss.worker.celery_app beat --loglevel=info
-    env_file: .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://nexiss:nexiss_dev@db:5432/nexiss
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      - redis
-
-  # ── React frontend ─────────────────────────────────────
+  # ── Frontend ──────────────────────────────────────────────
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    container_name: nexiss-frontend
     restart: unless-stopped
     ports:
-      - '3000:80'
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
     depends_on:
-      - backend
+      - api
 
 volumes:
-  pgdata:
+  nexiss_postgres_data:
+  nexiss_redis_data:
