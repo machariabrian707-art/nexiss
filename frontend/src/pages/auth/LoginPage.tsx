@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { setAuth, setOrgs, setActiveOrg } = useAuthStore()
+  const { setAuth } = useAuthStore()
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
 
@@ -14,13 +14,13 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     try {
-      const { data } = await authApi.login(form)
-      setAuth(data.access_token, data as never)
-      // Fetch user profile
+      const { data: loginData } = await authApi.login(form)
+      // Fetch full user profile with the new token
       const { data: user } = await authApi.me()
-      setAuth(data.access_token, user)
+      setAuth(loginData.access_token, user)
       toast.success('Welcome back!')
-      navigate(user.is_superadmin ? '/admin' : '/app')
+      // is_superuser (backend field) controls admin redirect
+      navigate(user.is_superuser ? '/admin' : '/app')
     } catch {
       toast.error('Invalid email or password')
     } finally {
