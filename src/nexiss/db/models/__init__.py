@@ -3,6 +3,7 @@ from nexiss.db.models.automation import AutomationRule, AutomationRun  # noqa: F
 from nexiss.db.models.billing import BillingCustomer, BillingSubscription  # noqa: F401
 from nexiss.db.models.classification import DocumentCategory  # noqa: F401
 from nexiss.db.models.document import Document, DocumentStatus  # noqa: F401
+from nexiss.db.models.document_type import DocumentType  # noqa: F401
 from nexiss.db.models.entity import DocumentEntity, Entity, EntityAlias  # noqa: F401
 from nexiss.db.models.org_membership import OrgMembership, OrgRole  # noqa: F401
 from nexiss.db.models.organization import Organization  # noqa: F401
@@ -19,6 +20,7 @@ __all__ = [
     "DocumentCategory",
     "DocumentEntity",
     "DocumentStatus",
+    "DocumentType",
     "Entity",
     "EntityAlias",
     "OrgMembership",

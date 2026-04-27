@@ -1,8 +1,8 @@
 """LLM extraction service.
 
-Key improvement over the original: the prompt is now document-type-aware.
-If we know (or can infer) the document type, we ask the LLM to extract the
-exact fields that matter for that type — not just generic JSON.
+Key improvement: the prompt is document-type-aware.
+If we know the document type (via declared_type or confirmed_type),
+we ask the LLM to extract the exact fields that matter for that type.
 """
 from __future__ import annotations
 
@@ -14,14 +14,13 @@ import httpx
 from nexiss.core.config import get_settings
 from nexiss.db.models.document import Document
 from nexiss.db.models.document_type import DocumentType
-from nexiss.schemas.document import DOC_TYPE_SCHEMA_MAP
 from nexiss.services.ai.types import LLMExtractionResult
 
 settings = get_settings()
 
 
 # ---------------------------------------------------------------------------
-# Prompt templates per document category
+# Prompt templates per document sub-type
 # ---------------------------------------------------------------------------
 
 _BASE_PROMPT = """\
@@ -34,22 +33,35 @@ Document type: {doc_type}
 """
 
 _TYPE_INSTRUCTIONS: dict[str, str] = {
-    "invoice": "Extract: vendor_name, vendor_address, invoice_number, invoice_date, due_date, line_items (array of {{description, quantity, unit_price, total}}), subtotal, tax, total_amount, currency, payment_terms.",
-    "receipt": "Extract: vendor_name, date, items (array of {{name, price}}), subtotal, tax, total_amount, currency, payment_method.",
-    "patient_record": "Extract: patient_name, patient_id, date_of_birth, visit_date, doctor_name, facility, diagnosis (array), medications (array of {{name, dose, frequency}}), lab_values (object), notes.",
-    "prescription": "Extract: patient_name, doctor_name, date, medications (array of {{name, dose, frequency, duration}}), notes.",
-    "lab_result": "Extract: patient_name, patient_id, doctor_name, facility, date, tests (array of {{test_name, value, unit, reference_range, flag}}), notes.",
+    "invoice": "Extract: vendor_name, vendor_address, invoice_number, invoice_date, due_date, line_items (array of {description, quantity, unit_price, total}), subtotal, tax, total_amount, currency, payment_terms.",
+    "receipt": "Extract: vendor_name, date, items (array of {name, price}), subtotal, tax, total_amount, currency, payment_method.",
+    "patient_record": "Extract: patient_name, patient_id, date_of_birth, visit_date, doctor_name, facility, diagnosis (array), medications (array of {name, dose, frequency}), lab_values (object), notes.",
+    "prescription": "Extract: patient_name, doctor_name, date, medications (array of {name, dose, frequency, duration}), notes.",
+    "lab_result": "Extract: patient_name, patient_id, doctor_name, facility, date, tests (array of {test_name, value, unit, reference_range, flag}), notes.",
     "contract": "Extract: document_title, parties (array), effective_date, expiry_date, jurisdiction, key_clauses (array of short summaries), obligations (array), risk_flags (array).",
     "agreement": "Extract: document_title, parties (array), effective_date, expiry_date, jurisdiction, key_clauses (array of short summaries), obligations (array), risk_flags (array).",
-    "cv_resume": "Extract: full_name, email, phone, address, skills (array), work_experience (array of {{company, role, start_date, end_date, description}}), education (array of {{institution, degree, year}}), certifications (array).",
+    "cv_resume": "Extract: full_name, email, phone, address, skills (array), work_experience (array of {company, role, start_date, end_date, description}), education (array of {institution, degree, year}), certifications (array).",
     "employee_record": "Extract: employee_name, employee_id, job_title, department, hire_date, salary, currency, skills (array), notes.",
     "national_id": "Extract: full_name, document_number, nationality, date_of_birth, issue_date, expiry_date, issuing_authority.",
     "passport": "Extract: full_name, document_number, nationality, date_of_birth, issue_date, expiry_date, issuing_authority.",
-    "bill_of_lading": "Extract: shipper, consignee, tracking_number, origin, destination, ship_date, estimated_delivery, items (array of {{description, quantity, weight}}), total_weight, total_value.",
-    "bank_statement": "Extract: account_holder, account_number, bank_name, statement_period_start, statement_period_end, opening_balance, closing_balance, transactions (array of {{date, description, debit, credit, balance}}).",
+    "bill_of_lading": "Extract: shipper, consignee, tracking_number, origin, destination, ship_date, estimated_delivery, items (array of {description, quantity, weight}), total_weight, total_value.",
+    "bank_statement": "Extract: account_holder, account_number, bank_name, statement_period_start, statement_period_end, opening_balance, closing_balance, transactions (array of {date, description, debit, credit, balance}).",
 }
 
 _DEFAULT_INSTRUCTION = "Extract all key fields, dates, names, amounts, and identifiers as a structured JSON object."
+
+_CLASSIFICATION_PROMPT = """\
+You are Nexiss, a document intelligence system.
+Given the OCR text below, determine the document type.
+
+Respond ONLY with valid JSON in this format:
+{{"document_type": "<type>", "confidence": <0.0-1.0>}}
+
+Valid types: {valid_types}
+
+OCR TEXT:
+{ocr_text}
+"""
 
 
 def _build_prompt(document: Document, ocr_text: str, doc_type: str) -> str:
@@ -65,20 +77,6 @@ def _build_prompt(document: Document, ocr_text: str, doc_type: str) -> str:
         + "\n\nOCR TEXT:\n"
         + ocr_text
     )
-
-
-_CLASSIFICATION_PROMPT = """\
-You are Nexiss, a document intelligence system.
-Given the OCR text below, determine the document type.
-
-Respond ONLY with valid JSON in this format:
-{{"document_type": "<type>", "confidence": <0.0-1.0>}}
-
-Valid types: {valid_types}
-
-OCR TEXT:
-{ocr_text}
-"""
 
 
 class LLMExtractionService:
@@ -106,7 +104,7 @@ class LLMExtractionService:
         word_count = len([p for p in ocr_text.split(" ") if p.strip()])
         tokens_input = max(word_count, 1)
         tokens_output = max(tokens_input // 3, 1)
-        doc_type = document.declared_type or "unknown"
+        doc_type = getattr(document, "declared_type", None) or "unknown"
         data = {
             "document_type": doc_type,
             "file_name": document.file_name,
@@ -128,8 +126,11 @@ class LLMExtractionService:
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
 
-        # Use declared_type if the user told us; otherwise classify first.
-        doc_type = document.declared_type or document.confirmed_type or "unknown"
+        doc_type = (
+            getattr(document, "declared_type", None)
+            or getattr(document, "confirmed_type", None)
+            or "unknown"
+        )
 
         prompt = _build_prompt(document, ocr_text, doc_type)
         url = f"{settings.openai_base_url.rstrip('/')}/responses"
@@ -168,10 +169,10 @@ class LLMExtractionService:
         if not settings.openai_api_key:
             return "unknown", 0.0
 
-        valid_types = ", ".join([t.value for t in DocumentType])
+        valid_types = ", ".join(t.value for t in DocumentType)
         prompt = _CLASSIFICATION_PROMPT.format(
             valid_types=valid_types,
-            ocr_text=ocr_text[:3000],  # cap at 3k chars to save tokens
+            ocr_text=ocr_text[:3000],
         )
         url = f"{settings.openai_base_url.rstrip('/')}/responses"
         payload = {
