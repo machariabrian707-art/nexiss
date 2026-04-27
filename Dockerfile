@@ -1,41 +1,39 @@
-# ── Nexiss API + Worker Dockerfile ───────────────────────────
-# Multi-stage: builder installs deps, runtime is lean.
-# Usage:
-#   docker build --target api -t nexiss-api .
-#   docker build --target worker -t nexiss-worker .
-
-FROM python:3.11-slim AS base
+# ── Stage 1: builder ─────────────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# System deps: libpq for asyncpg, build tools for compiled packages
+# System deps for psycopg2, Pillow, pytesseract
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    libpq-dev \
-    curl \
+    gcc g++ libpq-dev libffi-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ── Builder ──────────────────────────────────────────────────
-FROM base AS builder
-
 COPY pyproject.toml ./
-COPY src ./src
+RUN pip install --upgrade pip && pip install build && pip install -e . --no-cache-dir
 
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -e .[observability]
+# ── Stage 2: runtime ─────────────────────────────────────────────────────────
+FROM python:3.12-slim
 
-# ── API ──────────────────────────────────────────────────────
-FROM builder AS api
+WORKDIR /app
 
+# Runtime system deps (tesseract for OCR fallback)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 tesseract-ocr poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed packages from builder
+COPY --from=builder /usr/local/lib/python3.12 /usr/local/lib/python3.12
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy source
+COPY src/ ./src/
+COPY alembic/ ./alembic/
 COPY alembic.ini ./
-COPY alembic ./alembic
+
+# Non-root user
+RUN useradd -m -u 1001 nexiss
+USER nexiss
 
 EXPOSE 8000
 
-# Run migrations then start API
-CMD ["sh", "-c", "alembic upgrade head && uvicorn nexiss.main:app --host 0.0.0.0 --port 8000"]
-
-# ── Worker ───────────────────────────────────────────────────
-FROM builder AS worker
-
-CMD ["celery", "-A", "nexiss.worker.celery_app", "worker", "--loglevel=info", "--concurrency=4"]
+CMD ["uvicorn", "nexiss.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
