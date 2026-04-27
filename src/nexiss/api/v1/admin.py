@@ -1,17 +1,10 @@
-"""Super Admin API.
+"""Super Admin API — platform-owner oversight.
 
-This router is for the PLATFORM owner (you) — not regular org users.
-It provides platform-wide oversight:
-  - All organisations
-  - All documents across all orgs
-  - Platform-level processing stats
-  - Entity review queue (low-confidence matches)
-
-Access is gated by the `is_superadmin` flag on the User model.
-This flag is set manually in the DB for now (migration adds the column).
+Access is gated by `is_superuser` on the User model (existing field).
 """
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -23,21 +16,18 @@ from nexiss.db.models.document import Document, DocumentStatus
 from nexiss.db.models.entity import Entity, EntityAlias
 from nexiss.db.models.org_membership import OrgMembership
 from nexiss.db.models.organization import Organization
-from nexiss.db.models.processing_job import ProcessingJob, ProcessingJobStatus
 from nexiss.db.models.user import User
 from nexiss.db.session import get_db_session
 from pydantic import BaseModel, ConfigDict
-from datetime import datetime
 
 router = APIRouter(prefix="/admin", tags=["super-admin"])
 
 
-# ---------- Auth guard ----------
 async def require_superadmin(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db_session),
 ) -> User:
-    if not getattr(current_user, "is_superadmin", False):
+    if not current_user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Super-admin access required",
@@ -45,7 +35,6 @@ async def require_superadmin(
     return current_user
 
 
-# ---------- Response schemas ----------
 class OrgSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     org_id: UUID
@@ -77,16 +66,14 @@ class AdminDocumentRow(BaseModel):
 
 
 class EntityReviewItem(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
     entity_id: UUID
     org_id: UUID
     canonical_name: str
     entity_kind: str
-    candidate_match_id: str  # the UUID stored after "review:" prefix
+    candidate_match_id: str
     created_at: datetime
 
 
-# ---------- Endpoints ----------
 @router.get("/stats", response_model=PlatformStats)
 async def platform_stats(
     _: User = Depends(require_superadmin),
@@ -95,12 +82,10 @@ async def platform_stats(
     total_orgs = (await db.execute(select(func.count(Organization.org_id)))).scalar_one()
     total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
     total_docs = (await db.execute(select(func.count(Document.id)))).scalar_one()
-
     status_rows = await db.execute(
         select(Document.status, func.count(Document.id)).group_by(Document.status)
     )
     status_counts = {s.value: c for s, c in status_rows.all()}
-
     return PlatformStats(
         total_orgs=total_orgs,
         total_users=total_users,
@@ -121,7 +106,6 @@ async def list_all_orgs(
     orgs = (await db.execute(
         select(Organization).order_by(Organization.created_at.desc()).limit(limit).offset(offset)
     )).scalars().all()
-
     result = []
     for org in orgs:
         member_count = (await db.execute(
@@ -166,13 +150,11 @@ async def entity_review_queue(
     db: AsyncSession = Depends(get_db_session),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[EntityReviewItem]:
-    """Returns entities flagged for human review (low-confidence fuzzy match)."""
     review_aliases = (await db.execute(
         select(EntityAlias)
         .where(EntityAlias.alias.startswith("review:"))
         .limit(limit)
     )).scalars().all()
-
     result = []
     for alias in review_aliases:
         entity = await db.get(Entity, alias.entity_id)
@@ -191,26 +173,19 @@ async def entity_review_queue(
 @router.post("/entity-review/{entity_id}/merge")
 async def merge_entity(
     entity_id: UUID,
-    target_id: UUID = Query(description="The entity to merge INTO (keep this one)"),
+    target_id: UUID = Query(description="Entity to merge INTO"),
     _: User = Depends(require_superadmin),
     db: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    """Merge a review-flagged entity into the target canonical entity."""
     from nexiss.db.models.entity import DocumentEntity
-    from sqlalchemy import update, delete
+    from sqlalchemy import delete, update
 
-    # Re-point all document links
     await db.execute(
         update(DocumentEntity)
         .where(DocumentEntity.entity_id == entity_id)
         .values(entity_id=target_id)
     )
-    # Delete the duplicate entity + its aliases
-    await db.execute(
-        delete(EntityAlias).where(EntityAlias.entity_id == entity_id)
-    )
-    await db.execute(
-        delete(Entity).where(Entity.id == entity_id)
-    )
+    await db.execute(delete(EntityAlias).where(EntityAlias.entity_id == entity_id))
+    await db.execute(delete(Entity).where(Entity.id == entity_id))
     await db.commit()
     return {"merged": str(entity_id), "into": str(target_id)}

@@ -28,6 +28,7 @@ dependencies = [
     "orjson>=3.10.7",
     "email-validator>=2.2.0",
     "stripe>=10.0.0",
+    "openpyxl>=3.1.0",
 ]
 
 [project.optional-dependencies]
@@ -43,7 +44,7 @@ observability = [
 ]
 
 [tool.setuptools]
-package-dir = {"" = "src"}
+package-dir = {"": "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
