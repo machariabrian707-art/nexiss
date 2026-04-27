@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexiss"
+version = "0.1.0"
+description = "Nexiss SaaS backend platform"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy[asyncio]>=2.0.32",
+    "asyncpg>=0.29.0",
+    "pg8000>=1.31.2",
+    "alembic>=1.13.2",
+    "pydantic-settings>=2.4.0",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "bcrypt<5",
+    "redis>=5.0.8",
+    "celery[redis]>=5.4.0",
+    "boto3>=1.35.0",
+    "httpx>=0.27.0",
+    "structlog>=24.4.0",
+    "prometheus-client>=0.20.0",
+    "orjson>=3.10.7",
+    "email-validator>=2.2.0",
+    "stripe>=10.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.2",
+    "pytest-asyncio>=0.24.0",
+    "anyio>=4.4.0",
+    "ruff>=0.6.3",
+]
+
+observability = [
+    "sentry-sdk>=2.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
