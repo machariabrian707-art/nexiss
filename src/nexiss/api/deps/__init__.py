@@ -5,7 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from nexiss.db.session import AsyncSessionLocal
+from nexiss.db.session import AsyncSessionFactory as AsyncSessionLocal
 from nexiss.core.security import decode_token
 from nexiss.db.models.user import User
 from nexiss.db.models.org_membership import OrgMembership
