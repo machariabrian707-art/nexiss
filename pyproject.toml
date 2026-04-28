@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "nexiss"
 version = "0.1.0"
 description = "Universal Document Intelligence Platform"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     # Web framework
     "fastapi>=0.111.0",
