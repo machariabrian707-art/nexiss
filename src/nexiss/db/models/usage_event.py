@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, Numeric, func
+from sqlalchemy import BigInteger, DateTime, Enum, ForeignKey, JSON, Numeric, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,7 +39,7 @@ class UsageEvent(Base):
     quantity: Mapped[int] = mapped_column(BigInteger, nullable=False)
     unit_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 6), nullable=True)
     total_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 6), nullable=True)
-    details: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    details: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
     )

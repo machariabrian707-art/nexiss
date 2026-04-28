@@ -5,18 +5,21 @@ import toast from 'react-hot-toast'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ full_name: '', email: '', password: '', org_name: '' })
+  const [form, setForm] = useState({ full_name: '', email: '', password: '', org_name: '', org_slug: '' })
   const [loading, setLoading] = useState(false)
 
   const handle = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     try {
-      await authApi.register(form)
+      await authApi.register({ 
+        ...form, 
+        org_slug: form.org_slug || form.org_name.toLowerCase().replace(/[^a-z0-9]/g, '-') 
+      })
       toast.success('Account created! Please sign in.')
       navigate('/login')
     } catch {
-      toast.error('Registration failed. Email may already be in use.')
+      toast.error('Registration failed. Please check your inputs.')
     } finally {
       setLoading(false)
     }
@@ -38,6 +41,10 @@ export default function RegisterPage() {
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Organisation</label>
             <input required className="input" placeholder="Acme Ltd" value={form.org_name} onChange={f('org_name')} />
+          </div>
+          <div className="col-span-2">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Organisation Slug (URL ID)</label>
+            <input required className="input" placeholder="acme-ltd" value={form.org_slug} onChange={f('org_slug')} />
           </div>
         </div>
         <div>

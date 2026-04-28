@@ -5,11 +5,12 @@ import pytest
 async def test_register_and_login(client):
     # Register
     resp = await client.post("/api/v1/auth/register", json={
-        "email": "test@nexiss.io",
-        "password": "testpassword123",
-        "full_name": "Test User",
-        "org_name": "Test Org",
-    })
+            "email": "test@nexiss.io",
+            "password": "testpassword123",
+            "full_name": "Test User",
+            "org_name": "Test Org",
+            "org_slug": "test-org",
+        })
     assert resp.status_code in (200, 201), resp.text
 
     # Login
@@ -31,6 +32,7 @@ async def test_login_wrong_password(client):
         "password": "rightpass",
         "full_name": "Wrong User",
         "org_name": "Wrong Org",
+        "org_slug": "wrong-org",
     })
     # Login with wrong password
     resp = await client.post("/api/v1/auth/login", json={
@@ -54,6 +56,7 @@ async def test_me_with_token(client):
         "password": "password123",
         "full_name": "Me User",
         "org_name": "Me Org",
+        "org_slug": "me-org",
     })
     login = await client.post("/api/v1/auth/login", json={
         "email": "me@nexiss.io",

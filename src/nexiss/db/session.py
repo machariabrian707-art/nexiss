@@ -17,6 +17,9 @@ AsyncSessionFactory = async_sessionmaker(
     expire_on_commit=False,
 )
 
+# Alias for backward compatibility
+AsyncSessionLocal = AsyncSessionFactory
+
 
 async def get_db_session() -> AsyncGenerator[AsyncSession, None]:
     async with AsyncSessionFactory() as session:

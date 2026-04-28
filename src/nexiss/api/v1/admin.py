@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nexiss.api.deps.auth import get_current_user
+from nexiss.api.deps import get_current_user
 from nexiss.db.models.document import Document, DocumentStatus
 from nexiss.db.models.entity import Entity, EntityAlias
 from nexiss.db.models.org_membership import OrgMembership

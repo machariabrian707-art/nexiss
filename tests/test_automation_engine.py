@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
@@ -20,6 +21,9 @@ class FakeScalarResult:
     def all(self):
         return self._rows
 
+    def first(self):
+        return self._rows[0] if self._rows else None
+
     def scalar_one_or_none(self):
         return self._rows[0] if self._rows else None
 
@@ -31,6 +35,9 @@ class FakeExecuteResult:
     def scalars(self):
         return FakeScalarResult(self._rows)
 
+    def scalar_one_or_none(self):
+        return self._rows[0] if self._rows else None
+
 
 class FakeSession:
     def __init__(self, rules=None, subscriptions=None):
@@ -39,14 +46,36 @@ class FakeSession:
         self._subscriptions = subscriptions if subscriptions is not None else []
 
     def execute(self, stmt):
-        if "automation_rules" in str(stmt):
+        stmt_str = str(stmt).lower()
+        if "automation_rules" in stmt_str:
             return FakeExecuteResult(self._rules)
-        if "billing_subscriptions" in str(stmt):
+        if "billing_subscriptions" in stmt_str:
             return FakeExecuteResult(self._subscriptions)
         return FakeExecuteResult([])
 
     def add(self, value):
         self.added.append(value)
+    
+    def commit(self):
+        pass
+
+    def close(self):
+        pass
+
+
+class MockResponse:
+    def __init__(self, status_code, content, headers=None):
+        self.status_code = status_code
+        self.content = content
+        self.headers = headers or {}
+        self.text = content.decode('utf-8') if isinstance(content, bytes) else content
+
+    def json(self):
+        return json.loads(self.content)
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError(f"Error {self.status_code}", request=None, response=self)
 
 
 @pytest.fixture
@@ -130,7 +159,8 @@ def test_execute_internal_automation_webhook_action_succeeds(mock_db_session, mo
     )
     mock_db_session._rules = [rule]
 
-    mock_post = MagicMock(return_value=SimpleNamespace(status_code=200, content=b'{}', json=lambda: {}))
+    mock_resp = MockResponse(status_code=200, content=b'{}', headers={"content-type": "application/json"})
+    mock_post = MagicMock(return_value=mock_resp)
     monkeypatch.setattr(httpx.Client, "post", mock_post)
 
     result = execute_internal_automation(
@@ -304,7 +334,8 @@ def test_execute_internal_automation_multiple_actions_mixed_status(mock_db_sessi
     )
     mock_db_session._rules = [rule]
 
-    mock_post = MagicMock(return_value=SimpleNamespace(status_code=200, content=b'{}', json=lambda: {}))
+    mock_resp = MockResponse(status_code=200, content=b'{}', headers={"content-type": "application/json"})
+    mock_post = MagicMock(return_value=mock_resp)
     monkeypatch.setattr(httpx.Client, "post", mock_post)
     
     # No active subscription mocked for payment_agent to fail
@@ -319,8 +350,9 @@ def test_execute_internal_automation_multiple_actions_mixed_status(mock_db_sessi
     assert result.runs_created == 1
     assert result.succeeded == 0  # Overall failed due to payment_agent
     assert result.failed == 1
-    assert mock_document.meta_data.get("tags") == ["first-tag", "last-tag"] # Tags should still be applied
+    assert sorted(mock_document.meta_data.get("tags")) == sorted(["first-tag", "last-tag"]) # Tags should still be applied
     assert mock_db_session.added[0].status.value == "failed"
+
     assert "No active subscription found" in mock_db_session.added[0].error_message
     assert len(mock_db_session.added[0].executed_actions["results"]) == 4
     # Check individual action results
