@@ -1,4 +1,7 @@
-"""Tests for document classification service and DocumentCategory enum."""
+"""Tests for document classification service.
+
+Fixed: openai test patches the correct attribute path used by classifier_service.
+"""
 from __future__ import annotations
 
 from decimal import Decimal
@@ -66,12 +69,10 @@ def test_mock_classifier_returns_first_subtype_for_category():
 
 
 def test_openai_classifier_raises_without_api_key(monkeypatch):
-    monkeypatch.setattr(
-        "nexiss.services.ai.classifier_service.settings.llm_provider", "openai"
-    )
-    monkeypatch.setattr(
-        "nexiss.services.ai.classifier_service.settings.openai_api_key", None
-    )
+    # Patch settings inside the classifier_service module (where it is used)
+    import nexiss.services.ai.classifier_service as cs_module
+    monkeypatch.setattr(cs_module.settings, "llm_provider", "openai")
+    monkeypatch.setattr(cs_module.settings, "openai_api_key", None)
     service = DocumentClassifierService()
     doc = _make_doc(declared_type="legal")
     with pytest.raises(RuntimeError, match="OPENAI_API_KEY"):

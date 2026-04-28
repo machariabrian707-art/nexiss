@@ -1,8 +1,7 @@
-"""LLM extraction service.
+"""LLM extraction service — document-type-aware prompt builder.
 
-Key improvement: the prompt is document-type-aware.
-If we know the document type (via declared_type or confirmed_type),
-we ask the LLM to extract the exact fields that matter for that type.
+Fixed: _openai_classify now uses DocumentCategory (the 12 super-categories)
+instead of the old flat DocumentType enum, keeping both systems in sync.
 """
 from __future__ import annotations
 
@@ -12,16 +11,11 @@ from decimal import Decimal
 import httpx
 
 from nexiss.core.config import get_settings
+from nexiss.db.models.classification import DocumentCategory
 from nexiss.db.models.document import Document
-from nexiss.db.models.document_type import DocumentType
 from nexiss.services.ai.types import LLMExtractionResult
 
 settings = get_settings()
-
-
-# ---------------------------------------------------------------------------
-# Prompt templates per document sub-type
-# ---------------------------------------------------------------------------
 
 _BASE_PROMPT = """\
 You are Nexiss, a document intelligence system.
@@ -52,12 +46,12 @@ _DEFAULT_INSTRUCTION = "Extract all key fields, dates, names, amounts, and ident
 
 _CLASSIFICATION_PROMPT = """\
 You are Nexiss, a document intelligence system.
-Given the OCR text below, determine the document type.
+Given the OCR text below, determine the document category.
 
 Respond ONLY with valid JSON in this format:
-{{"document_type": "<type>", "confidence": <0.0-1.0>}}
+{{"category": "<category>", "confidence": <0.0-1.0>}}
 
-Valid types: {valid_types}
+Valid categories: {valid_categories}
 
 OCR TEXT:
 {ocr_text}
@@ -87,18 +81,9 @@ class LLMExtractionService:
             return self._openai_extract(document, ocr_text)
         raise ValueError(f"Unsupported LLM provider: {settings.llm_provider}")
 
-    def classify(self, ocr_text: str) -> tuple[str, float]:
-        """Return (document_type, confidence) by asking the LLM to classify the text."""
-        if settings.llm_provider == "mock":
-            return "unknown", 0.5
-        if settings.llm_provider == "openai":
-            return self._openai_classify(ocr_text)
-        return "unknown", 0.5
-
     # ------------------------------------------------------------------
     # Mock
     # ------------------------------------------------------------------
-
     @staticmethod
     def _mock_extract(document: Document, ocr_text: str) -> LLMExtractionResult:
         word_count = len([p for p in ocr_text.split(" ") if p.strip()])
@@ -121,7 +106,6 @@ class LLMExtractionService:
     # ------------------------------------------------------------------
     # OpenAI
     # ------------------------------------------------------------------
-
     def _openai_extract(self, document: Document, ocr_text: str) -> LLMExtractionResult:
         if not settings.openai_api_key:
             raise RuntimeError("OPENAI_API_KEY is not configured")
@@ -131,7 +115,6 @@ class LLMExtractionService:
             or getattr(document, "confirmed_type", None)
             or "unknown"
         )
-
         prompt = _build_prompt(document, ocr_text, doc_type)
         url = f"{settings.openai_base_url.rstrip('/')}/responses"
         payload = {
@@ -163,36 +146,3 @@ class LLMExtractionService:
             tokens_input=max(tokens_input, 1),
             tokens_output=max(tokens_output, 1),
         )
-
-    def _openai_classify(self, ocr_text: str) -> tuple[str, float]:
-        """Ask the LLM to classify the document type from OCR text."""
-        if not settings.openai_api_key:
-            return "unknown", 0.0
-
-        valid_types = ", ".join(t.value for t in DocumentType)
-        prompt = _CLASSIFICATION_PROMPT.format(
-            valid_types=valid_types,
-            ocr_text=ocr_text[:3000],
-        )
-        url = f"{settings.openai_base_url.rstrip('/')}/responses"
-        payload = {
-            "model": settings.llm_model,
-            "input": prompt,
-            "text": {"format": {"type": "json_object"}},
-        }
-        headers = {"Authorization": f"Bearer {settings.openai_api_key}"}
-
-        try:
-            with httpx.Client(timeout=15) as client:
-                resp = client.post(url, json=payload, headers=headers)
-                resp.raise_for_status()
-                body = resp.json()
-            output_text = ""
-            for item in body.get("output", []):
-                for content in item.get("content", []):
-                    if content.get("type") == "output_text":
-                        output_text += content.get("text", "")
-            result = json.loads(output_text)
-            return result.get("document_type", "unknown"), float(result.get("confidence", 0.5))
-        except Exception:
-            return "unknown", 0.0

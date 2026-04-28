@@ -1,32 +1,22 @@
-"""Export service: converts processed documents to Excel or CSV.
+"""Export service: converts processed documents to Excel.
 
-Supports:
-  - Generic export (all fields in extracted_data as columns).
-  - Medical-aware export (groups rows by patient, sorts by date).
-  - Financial-aware export (invoices, receipts with amount columns).
-  - The calling API endpoint decides which mode based on confirmed_type.
+Fixed: export_documents_to_xlsx now handles empty list without IndexError.
 """
 from __future__ import annotations
 
 import io
-from datetime import datetime
 from typing import Any
 
 try:
     import openpyxl
     from openpyxl.styles import Font, PatternFill
     _HAS_OPENPYXL = True
-except ImportError:  # pragma: no cover
+except ImportError:
     _HAS_OPENPYXL = False
 
 from nexiss.db.models.document import Document
 
-
 _MEDICAL_CATEGORIES = {"medical_healthcare"}
-_FINANCIAL_CATEGORIES = {
-    "business_financial",
-    "logistics_supply_chain",
-}
 
 
 def _flatten(data: dict | None, prefix: str = "") -> dict[str, Any]:
@@ -52,7 +42,7 @@ def _medical_sort_key(row: dict) -> tuple:
 
 
 def export_documents_to_xlsx(documents: list[Document]) -> bytes:
-    """Returns raw bytes of an .xlsx file."""
+    """Returns raw bytes of an .xlsx file. Works correctly with empty list."""
     if not _HAS_OPENPYXL:
         raise RuntimeError(
             "openpyxl is not installed. Add 'openpyxl>=3.1' to project dependencies."
@@ -88,10 +78,11 @@ def export_documents_to_xlsx(documents: list[Document]) -> bytes:
                 all_keys.append(k)
                 seen_keys.add(k)
 
-    # Determine sort strategy based on first doc's confirmed_type
-    first_type = documents[0].confirmed_type if documents else ""
-    if first_type in _MEDICAL_CATEGORIES:
-        rows.sort(key=_medical_sort_key)
+    # Determine sort strategy — guard against empty list
+    if documents:
+        first_type = documents[0].confirmed_type or ""
+        if first_type in _MEDICAL_CATEGORIES:
+            rows.sort(key=_medical_sort_key)
 
     base_cols = ["id", "file_name", "status", "declared_type", "confirmed_type",
                  "document_subtype", "page_count", "created_at"]
