@@ -5,6 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from nexiss.api.deps.auth import get_auth_context as get_current_user
 from nexiss.db.session import AsyncSessionFactory as AsyncSessionLocal
 from nexiss.core.security import decode_token
 from nexiss.db.models.user import User
