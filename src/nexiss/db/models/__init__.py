@@ -4,7 +4,7 @@ from nexiss.db.models.billing import BillingCustomer, BillingSubscription  # noq
 from nexiss.db.models.classification import DocumentCategory  # noqa: F401
 from nexiss.db.models.document import Document, DocumentStatus  # noqa: F401
 from nexiss.db.models.entity import DocumentEntity, Entity, EntityAlias  # noqa: F401
-from nexiss.db.models.org_membership import OrgMembership, OrgRole  # noqa: F401
+from nexiss.db.models.org_membership import OrgMembership, MembershipRole as OrgRole  # noqa: F401
 from nexiss.db.models.organization import Organization  # noqa: F401
 from nexiss.db.models.processing_job import ProcessingJob, ProcessingJobStatus  # noqa: F401
 from nexiss.db.models.usage_event import UsageEvent, UsageMetricType  # noqa: F401
