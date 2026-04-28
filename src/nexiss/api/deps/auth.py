@@ -16,6 +16,12 @@ from nexiss.db.session import get_db_session
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db_session),
+) -> User:
+    ctx = await resolve_auth_context_from_token(token, db)
+    return ctx.user
 
 @dataclass(slots=True)
 class AuthContext:
