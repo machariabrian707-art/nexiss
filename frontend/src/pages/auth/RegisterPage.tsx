@@ -5,7 +5,7 @@ import toast from 'react-hot-toast'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
-  const [form, setForm] = useState({ full_name: '', email: '', password: '', org_name: '' })
+  const [form, setForm] = useState({ full_name: '', email: '', password: '', org_name: '', org_slug: '' })
   const [loading, setLoading] = useState(false)
 
   const handle = async (e: React.FormEvent) => {
@@ -16,7 +16,7 @@ export default function RegisterPage() {
       toast.success('Account created! Please sign in.')
       navigate('/login')
     } catch {
-      toast.error('Registration failed. Email may already be in use.')
+      toast.error('Registration failed. Check your inputs.')
     } finally {
       setLoading(false)
     }
@@ -39,6 +39,10 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Organisation</label>
             <input required className="input" placeholder="Acme Ltd" value={form.org_name} onChange={f('org_name')} />
           </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Organisation Slug</label>
+          <input required className="input" placeholder="acme-ltd" value={form.org_slug} onChange={f('org_slug')} />
         </div>
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>

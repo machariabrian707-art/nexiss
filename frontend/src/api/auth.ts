@@ -1,7 +1,7 @@
 import api from '@/lib/api'
 
 export interface LoginPayload { email: string; password: string }
-export interface RegisterPayload { email: string; password: string; full_name: string; org_name: string }
+export interface RegisterPayload { email: string; password: string; full_name: string; org_name: string; org_slug: string }
 
 export const authApi = {
   login: (data: LoginPayload) =>
