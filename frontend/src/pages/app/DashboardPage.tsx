@@ -53,10 +53,10 @@ export default function DashboardPage() {
     queryFn: () => analyticsApi.dailyProcessing(14).then((r) => r.data),
   })
 
-  const chartData = dailyStats?.map(d => ({
+  const chartData = Array.isArray(dailyStats) ? dailyStats.map(d => ({
     name: format(new Date(d.date), 'MMM dd'),
-    count: d.count
-  })) ?? []
+    count: d.documents
+  })) : []
 
   return (
     <div className="space-y-8 pb-12">

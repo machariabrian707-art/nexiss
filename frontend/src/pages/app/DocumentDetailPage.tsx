@@ -2,7 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { documentsApi } from '@/api/documents'
 import { format } from 'date-fns'
-import { ArrowLeft, RefreshCw, Play, Download, ExternalLink, ShieldCheck, Database, FileText } from 'lucide-react'
+import { ArrowLeft, RefreshCw, Play, Download, ExternalLink, ShieldCheck, Database, FileText, Activity } from 'lucide-react'
 import StatusBadge from '@/components/ui/StatusBadge'
 import ProgressBar from '@/components/ui/ProgressBar'
 import toast from 'react-hot-toast'
@@ -19,7 +19,7 @@ export default function DocumentDetailPage() {
   const { data: doc, isLoading } = useQuery({
     queryKey: ['document', id],
     queryFn: () => documentsApi.get(id!).then((r) => r.data),
-    refetchInterval: (d) => (d?.status === 'processing' ? 3000 : false),
+    refetchInterval: (query) => (query.state.data?.status === 'processing' ? 3000 : false),
   })
 
   const { data: progress } = useQuery({

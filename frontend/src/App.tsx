@@ -11,7 +11,7 @@ import DashboardPage from '@/pages/app/DashboardPage'
 import DocumentsPage from '@/pages/app/DocumentsPage'
 import SearchPage from '@/pages/app/SearchPage'
 import AnalyticsPage from '@/pages/app/AnalyticsPage'
-import AdminPage from '@/pages/admin/AdminPage'
+import AdminPage from '@/pages/admin/AdminDashboardPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
