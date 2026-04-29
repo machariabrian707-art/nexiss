@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 
+// Matches exactly what the backend /auth/me returns (CurrentUserResponse)
 export interface AuthUser {
-  id: string
+  user_id: string        // backend field name
   email: string
-  full_name: string
-  is_superuser: boolean   // matches backend field name
+  full_name: string | null
+  is_superuser: boolean
+  active_org_id: string  // backend field name
+  memberships: string[]
 }
 
 interface AuthState {
@@ -26,7 +29,8 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       activeOrgId: null,
       orgs: [],
-      setAuth: (token, user) => set({ token, user }),
+      // Store token AND derive activeOrgId from user.active_org_id in one call
+      setAuth: (token, user) => set({ token, user, activeOrgId: user.active_org_id }),
       setActiveOrg: (orgId) => set({ activeOrgId: orgId }),
       setOrgs: (orgs) => set({ orgs }),
       logout: () => set({ token: null, user: null, activeOrgId: null, orgs: [] }),
