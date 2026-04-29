@@ -12,8 +12,10 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
+      // Forward all /api requests directly to backend
+      // Do NOT rewrite the path — backend serves at /api/v1/...
       '/api': {
-        target: process.env.VITE_API_URL || 'http://localhost:3001',
+        target: process.env.VITE_API_URL || 'http://localhost:8000',
         changeOrigin: true,
       },
     },
