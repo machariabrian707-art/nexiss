@@ -1,23 +1,24 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, FileText, Upload, BarChart2,
-  Search, Settings, LogOut, ChevronLeft, ChevronRight, ShieldAlert
+  Search, Settings, LogOut, ShieldAlert, Cpu
 } from 'lucide-react'
 import { useUIStore } from '@/stores/uiStore'
 import { useAuthStore } from '@/stores/authStore'
 import clsx from 'clsx'
+import { motion, AnimatePresence } from 'framer-motion'
 
 const navItems = [
-  { to: '/app',           icon: LayoutDashboard, label: 'Dashboard',   end: true },
-  { to: '/app/documents', icon: FileText,         label: 'Documents' },
-  { to: '/app/upload',    icon: Upload,           label: 'Upload' },
-  { to: '/app/analytics', icon: BarChart2,        label: 'Analytics' },
-  { to: '/app/search',    icon: Search,           label: 'Search' },
-  { to: '/app/settings',  icon: Settings,         label: 'Settings' },
+  { to: '/app',           icon: LayoutDashboard, label: 'Hub',   end: true },
+  { to: '/app/documents', icon: FileText,         label: 'Repository' },
+  { to: '/app/upload',    icon: Upload,           label: 'Ingest' },
+  { to: '/app/analytics', icon: BarChart2,        label: 'Intelligence' },
+  { to: '/app/search',    icon: Search,           label: 'Discovery' },
+  { to: '/app/settings',  icon: Settings,         label: 'Core' },
 ]
 
 export default function Sidebar() {
-  const { sidebarOpen, toggleSidebar } = useUIStore()
+  const { sidebarOpen } = useUIStore()
   const { user, logout } = useAuthStore()
   const navigate = useNavigate()
 
@@ -26,63 +27,94 @@ export default function Sidebar() {
   return (
     <aside
       className={clsx(
-        'fixed inset-y-0 left-0 z-40 flex flex-col bg-white border-r border-gray-100 shadow-sm transition-all duration-300',
-        sidebarOpen ? 'w-64' : 'w-16'
+        'relative h-screen z-40 flex flex-col transition-all duration-500 ease-in-out',
+        sidebarOpen ? 'w-64' : 'w-24'
       )}
     >
-      {/* Logo */}
-      <div className="flex items-center h-16 px-4 border-b border-gray-100">
-        {sidebarOpen && (
-          <span className="text-xl font-bold text-brand-600 tracking-tight">Nexiss</span>
-        )}
-        <button
-          onClick={toggleSidebar}
-          className="ml-auto p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
-        >
-          {sidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
-        </button>
-      </div>
+      <div className="h-full py-6 px-4">
+        <div className="h-full glass rounded-3xl flex flex-col shadow-2xl border-white/5">
+          {/* Logo Section */}
+          <div className="flex flex-col items-center py-8">
+            <div className="relative">
+              <div className="absolute inset-0 bg-brand-400 blur-xl opacity-20 animate-pulse" />
+              <div className="relative bg-gradient-to-br from-brand-400 to-accent-indigo p-2.5 rounded-2xl shadow-glow-brand">
+                <Cpu size={24} className="text-white" />
+              </div>
+            </div>
+            <AnimatePresence>
+              {sidebarOpen && (
+                <motion.span
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 10 }}
+                  className="mt-4 text-xl font-bold font-lexend tracking-tighter bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent"
+                >
+                  NEXISS
+                </motion.span>
+              )}
+            </AnimatePresence>
+          </div>
 
-      {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4 px-2 space-y-1">
-        {navItems.map(({ to, icon: Icon, label, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              clsx(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-brand-50 text-brand-700'
-                  : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-              )
-            }
-          >
-            <Icon size={18} className="shrink-0" />
-            {sidebarOpen && <span>{label}</span>}
-          </NavLink>
-        ))}
-      </nav>
+          {/* Navigation */}
+          <nav className="flex-1 px-3 py-6 space-y-2">
+            {navItems.map(({ to, icon: Icon, label, end }) => (
+              <NavLink
+                key={to}
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  clsx(
+                    'group relative flex items-center gap-4 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300',
+                    isActive
+                      ? 'bg-white/10 text-brand-400 shadow-inner'
+                      : 'text-gray-500 hover:text-gray-200 hover:bg-white/5'
+                  )
+                }
+              >
+                {({ isActive }) => (
+                  <>
+                    <Icon size={20} className={clsx('shrink-0 transition-transform duration-300 group-hover:scale-110', isActive && 'text-brand-400')} />
+                    {sidebarOpen && (
+                      <motion.span
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="truncate font-lexend"
+                      >
+                        {label}
+                      </motion.span>
+                    )}
+                    {isActive && (
+                      <motion.div
+                        layoutId="activeNav"
+                        className="absolute left-0 w-1 h-6 bg-brand-400 rounded-r-full shadow-glow-brand"
+                      />
+                    )}
+                  </>
+                )}
+              </NavLink>
+            ))}
+          </nav>
 
-      {/* Footer */}
-      <div className="p-2 border-t border-gray-100 space-y-1">
-        {user?.is_superadmin && (
-          <NavLink
-            to="/admin"
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-purple-600 hover:bg-purple-50 transition-colors"
-          >
-            <ShieldAlert size={18} className="shrink-0" />
-            {sidebarOpen && <span>Admin Panel</span>}
-          </NavLink>
-        )}
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-100 transition-colors"
-        >
-          <LogOut size={18} className="shrink-0" />
-          {sidebarOpen && <span>Logout</span>}
-        </button>
+          {/* User Section */}
+          <div className="p-3 border-t border-white/5 space-y-2">
+            {user?.is_superuser && (
+              <NavLink
+                to="/admin"
+                className="flex items-center gap-4 px-4 py-3 rounded-2xl text-sm font-medium text-accent-indigo hover:bg-white/5 transition-all"
+              >
+                <ShieldAlert size={20} className="shrink-0" />
+                {sidebarOpen && <span className="font-lexend">Admin</span>}
+              </NavLink>
+            )}
+            <button
+              onClick={handleLogout}
+              className="w-full flex items-center gap-4 px-4 py-3 rounded-2xl text-sm font-medium text-gray-500 hover:text-rose-400 hover:bg-rose-400/5 transition-all"
+            >
+              <LogOut size={20} className="shrink-0" />
+              {sidebarOpen && <span className="font-lexend">Sign Out</span>}
+            </button>
+          </div>
+        </div>
       </div>
     </aside>
   )

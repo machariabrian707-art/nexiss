@@ -4,7 +4,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, JSON, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -36,8 +36,8 @@ class AutomationRule(Base):
         Enum(AutomationTriggerType, name="automation_trigger_type"),
         nullable=False,
     )
-    conditions: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    actions: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    conditions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    actions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -78,7 +78,7 @@ class AutomationRun(Base):
     )
     action_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
-    executed_actions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    executed_actions: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

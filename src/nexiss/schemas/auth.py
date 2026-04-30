@@ -1,3 +1,6 @@
+"""Auth schemas — fix: add is_superuser to CurrentUserResponse so the
+frontend authStore receives it and can route to /admin correctly.
+"""
 from __future__ import annotations
 
 from datetime import datetime
@@ -36,6 +39,7 @@ class CurrentUserResponse(BaseModel):
     user_id: UUID
     email: EmailStr
     full_name: str | None
+    is_superuser: bool            # <— added: frontend needs this to route to /admin
     active_org_id: UUID
     memberships: list[UUID]
     authenticated_at: datetime

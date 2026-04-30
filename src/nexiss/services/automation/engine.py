@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from nexiss.db.models.automation import (
     AutomationTriggerType,
 )
 from nexiss.db.models.document import Document
+from nexiss.services.automation.executor import execute_action
 
 
 @dataclass(slots=True)
@@ -26,18 +28,6 @@ def _rule_matches_document(rule: AutomationRule, document: Document) -> bool:
     if isinstance(allowed_types, list) and allowed_types:
         return document.content_type in allowed_types
     return True
-
-
-def _resolve_actions(rule: AutomationRule, document: Document) -> list[dict]:
-    actions = rule.actions.get("steps", [])
-    if not isinstance(actions, list):
-        return []
-    normalized: list[dict] = []
-    for action in actions:
-        if not isinstance(action, dict):
-            continue
-        normalized.append({"type": action.get("type", "noop"), "document_id": str(document.id)})
-    return normalized
 
 
 def execute_internal_automation(
@@ -62,12 +52,37 @@ def execute_internal_automation(
         if not _rule_matches_document(rule, document):
             continue
 
-        executed_actions = _resolve_actions(rule, document)
-        run_status = AutomationRunStatus.succeeded
+        actions = rule.actions.get("steps", [])
+        if not isinstance(actions, list) or not actions:
+            db.add(
+                AutomationRun(
+                    org_id=document.org_id,
+                    rule_id=rule.id,
+                    document_id=document.id,
+                    trigger_type=trigger_type,
+                    status=AutomationRunStatus.failed,
+                    action_count=0,
+                    error_message="No valid actions resolved",
+                )
+            )
+            runs_created += 1
+            failed += 1
+            continue
+
+        executed_results: list[dict[str, Any]] = []
+        overall_status = AutomationRunStatus.succeeded
         error_message = None
-        if not executed_actions:
-            run_status = AutomationRunStatus.failed
-            error_message = "No valid actions resolved"
+
+        for action in actions:
+            if not isinstance(action, dict):
+                continue
+            
+            result = execute_action(db, rule, document, action)
+            executed_results.append({"action": action, "result": result})
+            
+            if result.get("status") == "failed":
+                overall_status = AutomationRunStatus.failed
+                error_message = result.get("error")
 
         db.add(
             AutomationRun(
@@ -75,14 +90,14 @@ def execute_internal_automation(
                 rule_id=rule.id,
                 document_id=document.id,
                 trigger_type=trigger_type,
-                status=run_status,
-                action_count=len(executed_actions),
+                status=overall_status,
+                action_count=len(executed_results),
                 error_message=error_message,
-                executed_actions={"actions": executed_actions} if executed_actions else None,
+                executed_actions={"results": executed_results},
             )
         )
         runs_created += 1
-        if run_status == AutomationRunStatus.succeeded:
+        if overall_status == AutomationRunStatus.succeeded:
             succeeded += 1
         else:
             failed += 1

@@ -16,9 +16,13 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 # Override sqlalchemy.url from env if present
-database_url = os.getenv("DATABASE_URL", "").replace("+asyncpg", "+psycopg2")
+database_url = os.getenv("DATABASE_URL", "").replace("+asyncpg", "+pg8000").replace("+psycopg2", "+pg8000")
 if database_url:
+    # Explicitly force pg8000 dialect
+    if "postgresql://" in database_url and "+" not in database_url.split("://")[0]:
+        database_url = database_url.replace("postgresql://", "postgresql+pg8000://")
     config.set_main_option("sqlalchemy.url", database_url)
+
 
 
 def run_migrations_offline() -> None:

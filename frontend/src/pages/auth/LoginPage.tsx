@@ -6,7 +6,7 @@ import toast from 'react-hot-toast'
 
 export default function LoginPage() {
   const navigate = useNavigate()
-  const { setAuth, setOrgs, setActiveOrg } = useAuthStore()
+  const { setAuth } = useAuthStore()
   const [form, setForm] = useState({ email: '', password: '' })
   const [loading, setLoading] = useState(false)
 
@@ -14,15 +14,24 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     try {
-      const { data } = await authApi.login(form)
-      setAuth(data.access_token, data as never)
-      // Fetch user profile
+      // Step 1: get token
+      const { data: loginData } = await authApi.login(form)
+
+      // Step 2: store token FIRST so the /me request gets the Authorization header
+      // We store a temporary user object; it gets replaced in step 3
+      useAuthStore.setState({ token: loginData.access_token })
+
+      // Step 3: now fetch the full user profile (token is in the store now)
       const { data: user } = await authApi.me()
-      setAuth(data.access_token, user)
+
+      // Step 4: setAuth stores token + user + derives activeOrgId from user.active_org_id
+      setAuth(loginData.access_token, user)
+
       toast.success('Welcome back!')
-      navigate(user.is_superadmin ? '/admin' : '/app')
-    } catch {
-      toast.error('Invalid email or password')
+      navigate(user.is_superuser ? '/admin' : '/app')
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail || 'Invalid email or password'
+      toast.error(typeof msg === 'string' ? msg : 'Login failed')
     } finally {
       setLoading(false)
     }
@@ -42,6 +51,7 @@ export default function LoginPage() {
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
             placeholder="you@company.com"
+            autoComplete="email"
           />
         </div>
         <div>
@@ -53,6 +63,7 @@ export default function LoginPage() {
             value={form.password}
             onChange={(e) => setForm({ ...form, password: e.target.value })}
             placeholder="••••••••"
+            autoComplete="current-password"
           />
         </div>
         <button type="submit" disabled={loading} className="btn-primary w-full justify-center">

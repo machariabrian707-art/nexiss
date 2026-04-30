@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Numeric, String, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, JSON, Numeric, String, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -40,7 +40,7 @@ class Document(Base):
         Enum(DocumentStatus, name="document_status"), nullable=False, default=DocumentStatus.uploaded
     )
     page_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    extracted_data: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    extracted_data: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     confidence_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
     processing_attempts: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

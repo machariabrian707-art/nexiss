@@ -1,3 +1,14 @@
+"""Organization model.
+
+Fix: removed the redundant `id` primary key column.
+The Organization table used BOTH `id` (PK) and `org_id` (unique) which caused
+SQLAlchemy flush ordering issues — FK references to `org_id` from `users` and
+`org_memberships` were failing on register because `org_id` had a Python-side
+`default` but no DB `server_default`, so it wasn't guaranteed to be populated
+before the FK columns were evaluated.
+
+Now `org_id` IS the primary key, matching every FK that references it.
+"""
 from __future__ import annotations
 
 import uuid
@@ -13,9 +24,8 @@ from nexiss.db.base import Base
 class Organization(Base):
     __tablename__ = "organizations"
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     org_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), unique=True, nullable=False, default=uuid.uuid4, index=True
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
