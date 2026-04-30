@@ -1,0 +1,13 @@
+{
+    "mcpServers": {
+      "n8n-mcp": {
+        "command": "npx",
+        "args": ["-y", "n8n-mcp"],
+        "env": {
+          "N8N_URL": "https://cloud.n8n.io/api/v1",
+          "N8N_API_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJlYjA5Yzg3OS02N2VhLTRhMTUtYTIyMy0yN2YyYzY4ZGQxMWUiLCJpc3MiOiJuOG4iLCJhdWQiOiJwdWJsaWMtYXBpIiwiaWF0IjoxNzc3MjUzNTY0fQ.IVawj5mUacP9oJkhb1J-byqnBtS5EZIyi_TXLa_so60"
+        }
+      }
+    }
+  }
+  

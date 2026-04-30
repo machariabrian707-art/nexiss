@@ -1,0 +1,22 @@
+.env
+*.pyc
+__pycache__/
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+
+# Docker
+pgdata/
+
+# OS
+.DS_Store
+Thumbs.db

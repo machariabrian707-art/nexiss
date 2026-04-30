@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = Field(default=None, alias="STRIPE_SECRET_KEY")
     stripe_webhook_secret: str | None = Field(default=None, alias="STRIPE_WEBHOOK_SECRET")
 
+    @property
+    def STRIPE_SECRET_KEY(self) -> str | None:
+        return self.stripe_secret_key
+
+    @property
+    def STRIPE_WEBHOOK_SECRET(self) -> str | None:
+        return self.stripe_webhook_secret
+
     observability_provider: str = Field(default="disabled", alias="OBSERVABILITY_PROVIDER")
     sentry_dsn: str | None = Field(default=None, alias="SENTRY_DSN")
 

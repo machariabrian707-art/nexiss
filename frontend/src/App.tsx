@@ -40,10 +40,14 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+import { LavaLampBackground } from '@/components/LavaLampBackground'
+
 export default function App() {
   return (
-    <Routes>
-      {/* Auth */}
+    <>
+      <LavaLampBackground />
+      <Routes>
+        {/* Auth */}
       <Route element={<AuthLayout />}>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

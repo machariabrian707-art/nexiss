@@ -1,0 +1,12 @@
+{{
+  "emeraldwalk.runonsave": {
+    "commands": [
+      {
+        "match": "\\.(js|ts|py)$",
+        "cmd": "node ai-review.js ${file}"
+      }
+    ]
+  }
+}
+    "editor.codeActions.triggerOnFocusChange": true
+}

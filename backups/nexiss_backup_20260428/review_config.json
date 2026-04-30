@@ -1,0 +1,23 @@
+{
+    "model": "gpt-4o",
+    "temperature": 0.2,
+    "max_chars": 12000,
+  
+    "include_extensions": [
+      ".py",
+      ".ts",
+      ".tsx",
+      ".js"
+    ],
+  
+    "ignore_dirs": [
+      ".git",
+      "node_modules",
+      "__pycache__",
+      "dist",
+      "build",
+      "venv"
+    ],
+  
+    "review_prompt": "You are a senior FastAPI + Celery backend architect. Review this code for: async issues, DB session leaks, missing org_id checks, security flaws, bad structure, scalability issues.\n\nReturn:\n1. Issues\n2. Fix suggestions\n3. Improved code (only if necessary)"
+}

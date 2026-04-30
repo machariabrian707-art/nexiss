@@ -1,0 +1,17 @@
+{
+  "model": "gpt-4o",
+  "scan_path": "src/nexiss",
+  "severity_fail_threshold": "critical",
+  "excluded_paths": [
+    "src/nexiss/db/models/__init__.py",
+    "src/nexiss/api/v1/__init__.py"
+  ],
+  "checks": {
+    "multi_tenancy": true,
+    "async_await": true,
+    "hardcoded_secrets": true,
+    "missing_validation": true,
+    "automation_exposure": true,
+    "n_plus_one_queries": true
+  }
+}
