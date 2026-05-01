@@ -16,12 +16,6 @@ from nexiss.db.session import get_db_session
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 
-async def get_current_user(
-    token: str = Depends(oauth2_scheme),
-    db: AsyncSession = Depends(get_db_session),
-) -> User:
-    ctx = await resolve_auth_context_from_token(token, db)
-    return ctx.user
 
 @dataclass(slots=True)
 class AuthContext:
@@ -29,6 +23,14 @@ class AuthContext:
     active_org_id: UUID
     memberships: set[UUID]
     authenticated_at: datetime
+
+
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db_session),
+) -> User:
+    ctx = await resolve_auth_context_from_token(token, db)
+    return ctx.user
 
 
 async def _load_memberships(user_id: UUID, db: AsyncSession) -> set[UUID]:
@@ -52,22 +54,30 @@ async def resolve_auth_context_from_token(token: str, db: AsyncSession) -> AuthC
     try:
         payload = decode_token(token)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        ) from exc
 
     sub = payload.get("sub")
     org_claim = payload.get("org_id")
     if sub is None or org_claim is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload"
+        )
 
     user = await db.get(User, UUID(sub))
     if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive or missing user")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Inactive or missing user"
+        )
 
     memberships = await _load_memberships(user.id, db)
     active_org_id = UUID(org_claim)
 
     if active_org_id not in memberships:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token org access revoked")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Token org access revoked"
+        )
 
     return AuthContext(
         user=user,
@@ -78,15 +88,27 @@ async def resolve_auth_context_from_token(token: str, db: AsyncSession) -> AuthC
 
 
 async def require_org_context(
-    x_org_id: str = Header(..., alias="X-Org-Id"),
     auth: AuthContext = Depends(get_auth_context),
+    # X-Org-Id is OPTIONAL — if not provided we use the org from the JWT token.
+    # This prevents 422 errors immediately after login before the frontend
+    # has stored the activeOrgId in state.
+    x_org_id: str | None = Header(default=None, alias="X-Org-Id"),
 ) -> AuthContext:
+    if x_org_id is None:
+        # No header — use the org from the JWT (already validated above)
+        return auth
+
     try:
         requested_org_id = UUID(x_org_id)
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid X-Org-Id header") from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid X-Org-Id header"
+        ) from exc
+
     if requested_org_id not in auth.memberships:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Org access denied")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Org access denied"
+        )
 
     return AuthContext(
         user=auth.user,
