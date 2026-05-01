@@ -7,18 +7,41 @@ import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import axios from 'axios'
 
-const DOC_TYPES = [
-  'Auto-detect',
-  'Invoice', 'Receipt', 'Purchase Order', 'Bank Statement',
-  'Financial Statement', 'Payroll Record', 'Tax Document',
-  'Patient Record', 'Prescription', 'Lab Result', 'Medical Report',
-  'Contract', 'Agreement', 'Legal Document',
-  'Certificate', 'Transcript', 'Research Paper',
-  'Employee Record', 'CV / Resume', 'Offer Letter',
-  'Bill of Lading', 'Shipping Label', 'Customs Declaration',
-  'National ID', 'Passport', 'Permit',
-  'Handwritten Note', 'Scanned Document', 'Other',
-]
+// Maps display names to backend declared_type enum values
+const DOC_TYPE_MAP: Record<string, string | undefined> = {
+  'Auto-detect': undefined,
+  'Invoice': 'business_financial',
+  'Receipt': 'business_financial',
+  'Purchase Order': 'business_financial',
+  'Bank Statement': 'business_financial',
+  'Financial Statement': 'business_financial',
+  'Payroll Record': 'business_financial',
+  'Tax Document': 'business_financial',
+  'Patient Record': 'medical_healthcare',
+  'Prescription': 'medical_healthcare',
+  'Lab Result': 'medical_healthcare',
+  'Medical Report': 'medical_healthcare',
+  'Contract': 'legal',
+  'Agreement': 'legal',
+  'Legal Document': 'legal',
+  'Certificate': 'educational',
+  'Transcript': 'educational',
+  'Research Paper': 'educational',
+  'Employee Record': 'administrative_hr',
+  'CV / Resume': 'administrative_hr',
+  'Offer Letter': 'administrative_hr',
+  'Bill of Lading': 'logistics_supply_chain',
+  'Shipping Label': 'logistics_supply_chain',
+  'Customs Declaration': 'logistics_supply_chain',
+  'National ID': 'government_identity',
+  'Passport': 'government_identity',
+  'Permit': 'government_identity',
+  'Handwritten Note': 'image_based',
+  'Scanned Document': 'image_based',
+  'Other': 'other',
+}
+
+const DOC_TYPES = Object.keys(DOC_TYPE_MAP)
 
 interface FileState {
   file: File
@@ -46,12 +69,9 @@ export default function UploadPage() {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
     accept: {
-      'image/*': ['.jpg', '.jpeg', '.png', '.webp', '.tiff'],
+      'image/jpeg': ['.jpg', '.jpeg'],
+      'image/png': ['.png'],
       'application/pdf': ['.pdf'],
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-      'text/plain': ['.txt'],
-      'text/csv': ['.csv'],
     },
     maxSize: 50 * 1024 * 1024,
   })
@@ -68,22 +88,37 @@ export default function UploadPage() {
       setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, status: 'uploading', progress: 10 } : f))
       try {
         const { file, docTypeHint } = files[i]
-        // 1. Get signed URL
+
+        // 1. Get signed upload URL — using correct field names: file_name + content_type
         const { data: signed } = await documentsApi.signedUpload(file.name, file.type)
         setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, progress: 30 } : f))
-        // 2. Upload to S3
+
+        // 2. PUT directly to S3
         await axios.put(signed.upload_url, file, { headers: { 'Content-Type': file.type } })
         setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, progress: 60 } : f))
-        // 3. Create document record
-        const hint = docTypeHint === 'Auto-detect' ? undefined : docTypeHint
-        const { data: doc } = await documentsApi.create({ s3_key: signed.s3_key, filename: file.name, doc_type_hint: hint })
+
+        // 3. Create document record — using correct field names
+        const declaredType = DOC_TYPE_MAP[docTypeHint]
+        const { data: doc } = await documentsApi.create({
+          file_name: file.name,       // was: filename
+          content_type: file.type,
+          storage_key: signed.storage_key,  // was: s3_key / upload_url
+          declared_type: declaredType,      // was: doc_type_hint
+        })
         setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, progress: 80 } : f))
+
         // 4. Trigger processing
         await documentsApi.process(doc.id)
-        setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, status: 'done', progress: 100, docId: doc.id } : f))
+        setFiles((prev) => prev.map((f, idx) =>
+          idx === i ? { ...f, status: 'done', progress: 100, docId: doc.id } : f
+        ))
       } catch (err: unknown) {
-        const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ?? 'Upload failed'
-        setFiles((prev) => prev.map((f, idx) => idx === i ? { ...f, status: 'error', error: msg } : f))
+        const msg =
+          (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          'Upload failed'
+        setFiles((prev) => prev.map((f, idx) =>
+          idx === i ? { ...f, status: 'error', error: msg } : f
+        ))
         toast.error(`Failed: ${files[i].file.name}`)
       }
     }
@@ -101,12 +136,13 @@ export default function UploadPage() {
         </p>
       </div>
 
-      {/* Drop zone */}
       <div
         {...getRootProps()}
         className={clsx(
           'border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-colors',
-          isDragActive ? 'border-brand-400 bg-brand-50' : 'border-gray-200 hover:border-brand-300 hover:bg-gray-50'
+          isDragActive
+            ? 'border-brand-400 bg-brand-50'
+            : 'border-gray-200 hover:border-brand-300 hover:bg-gray-50'
         )}
       >
         <input {...getInputProps()} />
@@ -114,10 +150,9 @@ export default function UploadPage() {
         <p className="text-sm font-medium text-gray-700">
           {isDragActive ? 'Drop files here...' : 'Drag & drop files here, or click to browse'}
         </p>
-        <p className="text-xs text-gray-400 mt-1">PDF, Images (JPG/PNG), DOCX, XLSX, CSV, TXT — up to 50 MB each</p>
+        <p className="text-xs text-gray-400 mt-1">PDF, JPG, PNG — up to 50 MB each</p>
       </div>
 
-      {/* File list */}
       {files.length > 0 && (
         <div className="card divide-y divide-gray-50">
           {files.map((fs, i) => (
@@ -126,7 +161,6 @@ export default function UploadPage() {
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">{fs.file.name}</p>
                 <p className="text-xs text-gray-400">{(fs.file.size / 1024).toFixed(1)} KB</p>
-                {/* Progress bar */}
                 {fs.status === 'uploading' && (
                   <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                     <div
@@ -135,10 +169,11 @@ export default function UploadPage() {
                     />
                   </div>
                 )}
-                {fs.status === 'error' && <p className="text-xs text-red-500 mt-1">{fs.error}</p>}
+                {fs.status === 'error' && (
+                  <p className="text-xs text-red-500 mt-1">{fs.error}</p>
+                )}
               </div>
 
-              {/* Doc type selector */}
               {fs.status === 'idle' && (
                 <select
                   value={fs.docTypeHint}
@@ -149,11 +184,9 @@ export default function UploadPage() {
                 </select>
               )}
 
-              {/* Status icon */}
               {fs.status === 'done' && <CheckCircle size={18} className="text-green-500 shrink-0" />}
               {fs.status === 'error' && <AlertCircle size={18} className="text-red-500 shrink-0" />}
 
-              {/* Remove */}
               {fs.status === 'idle' && (
                 <button onClick={() => removeFile(i)} className="text-gray-300 hover:text-gray-500">
                   <X size={16} />
@@ -164,7 +197,6 @@ export default function UploadPage() {
         </div>
       )}
 
-      {/* Actions */}
       {files.length > 0 && (
         <div className="flex gap-3">
           {!allDone && (
@@ -173,8 +205,7 @@ export default function UploadPage() {
               disabled={files.every((f) => f.status !== 'idle')}
               className="btn-primary"
             >
-              <Upload size={15} />
-              Upload & Process All
+              <Upload size={15} /> Upload & Process All
             </button>
           )}
           {allDone && (

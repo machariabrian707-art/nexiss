@@ -22,10 +22,10 @@
     "react-hot-toast": "^2.4.1",
     "react-router-dom": "^6.23.1",
     "recharts": "^2.12.7",
-    "zustand": "^5.0.12"
+    "zustand": "^4.5.4"
   },
   "devDependencies": {
-    "@types/node": "^25.6.0",
+    "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@vitejs/plugin-react": "^4.3.1",

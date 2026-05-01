@@ -1,3 +1,4 @@
+import clsx from 'clsx'
 import { useQuery } from '@tanstack/react-query'
 import { analyticsApi } from '@/api/analytics'
 import { documentsApi } from '@/api/documents'
@@ -17,7 +18,7 @@ function StatCard({ label, value, icon: Icon, color, trend }: {
       <div className="flex items-start justify-between">
         <div>
           <p className="text-[10px] font-mono font-bold text-gray-500 uppercase tracking-widest">{label}</p>
-          <p className="text-3xl font-bold text-white mt-1 font-lexend">{value}</p>
+          <p className="text-3xl font-bold text-white mt-1">{value}</p>
           {trend && (
             <div className="flex items-center gap-1 mt-2 text-[10px] font-bold text-emerald-400">
               <TrendingUp size={12} />
@@ -29,13 +30,10 @@ function StatCard({ label, value, icon: Icon, color, trend }: {
           <Icon size={20} className="text-white" />
         </div>
       </div>
-      {/* Decorative background glow */}
       <div className={clsx('absolute -bottom-6 -right-6 w-24 h-24 blur-3xl opacity-10 rounded-full', color)} />
     </GlassCard>
   )
 }
-
-import clsx from 'clsx'
 
 export default function DashboardPage() {
   const { data: overview } = useQuery({
@@ -53,17 +51,20 @@ export default function DashboardPage() {
     queryFn: () => analyticsApi.dailyProcessing(14).then((r) => r.data),
   })
 
-  const chartData = Array.isArray(dailyStats) ? dailyStats.map(d => ({
-    name: format(new Date(d.date), 'MMM dd'),
-    count: d.documents
-  })) : []
+  // Fix: use correct field names from backend (points array, day + documents_processed)
+  const chartData = Array.isArray(dailyStats?.points)
+    ? dailyStats.points.map((d) => ({
+        name: format(new Date(d.day), 'MMM dd'),
+        count: d.documents_processed,
+      }))
+    : []
 
   return (
     <div className="space-y-8 pb-12">
-      {/* Header Section */}
+      {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             className="flex items-center gap-2 text-brand-400 mb-2"
@@ -71,81 +72,51 @@ export default function DashboardPage() {
             <Activity size={16} />
             <span className="text-[10px] font-mono font-bold uppercase tracking-widest">Neural Network Active</span>
           </motion.div>
-          <h1 className="text-4xl font-bold text-white font-lexend tracking-tight">Intelligence Hub</h1>
+          <h1 className="text-4xl font-bold text-white tracking-tight">Intelligence Hub</h1>
           <p className="text-gray-500 mt-1 max-w-md">Real-time document classification and entity extraction monitoring.</p>
         </div>
         <div className="flex gap-3">
           <Link to="/app/upload" className="btn-primary">
             <Zap size={16} /> Ingest Data
           </Link>
-          <Link to="/app/search" className="btn-secondary">
-            Discovery
-          </Link>
+          <Link to="/app/search" className="btn-secondary">Discovery</Link>
         </div>
       </div>
 
-      {/* Bento Grid Stats */}
+      {/* Stats — fix: use correct backend field names */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Inflow" value={overview?.total_documents ?? '0'} icon={FileText} color="text-brand-400" trend="+12% today" />
-        <StatCard label="Extracted" value={overview?.completed ?? '0'} icon={CheckCircle} color="text-emerald-400" trend="98.2% Accuracy" />
-        <StatCard label="In-Flight" value={overview?.processing ?? '0'} icon={Clock} color="text-amber-400" />
-        <StatCard label="Anomalies" value={overview?.failed ?? '0'} icon={AlertCircle} color="text-rose-400" />
+        <StatCard label="Inflow" value={overview?.total_documents_processed ?? 0} icon={FileText} color="text-brand-400" trend="+12% today" />
+        <StatCard label="Extracted" value={overview?.processing_success_count ?? 0} icon={CheckCircle} color="text-emerald-400" trend="98.2% Accuracy" />
+        <StatCard label="In-Flight" value={0} icon={Clock} color="text-amber-400" />
+        <StatCard label="Anomalies" value={overview?.processing_failed_count ?? 0} icon={AlertCircle} color="text-rose-400" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Chart Card */}
-        <GlassCard 
-          title="Throughput Velocity" 
-          subtitle="Processed documents over the last 14 cycles"
-          className="lg:col-span-2"
-        >
+        {/* Chart */}
+        <GlassCard title="Throughput Velocity" subtitle="Processed documents over the last 14 cycles" className="lg:col-span-2">
           <div className="h-64 mt-4">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <defs>
                   <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+                    <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <XAxis 
-                  dataKey="name" 
-                  stroke="#4b5563" 
-                  fontSize={10} 
-                  tickLine={false} 
-                  axisLine={false} 
-                  dy={10}
-                />
+                <XAxis dataKey="name" stroke="#4b5563" fontSize={10} tickLine={false} axisLine={false} dy={10} />
                 <YAxis hide />
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: '#0F172A', 
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    fontSize: '12px'
-                  }}
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0F172A', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', fontSize: '12px' }}
                   itemStyle={{ color: '#38bdf8' }}
                 />
-                <Area 
-                  type="monotone" 
-                  dataKey="count" 
-                  stroke="#38bdf8" 
-                  strokeWidth={3}
-                  fillOpacity={1} 
-                  fill="url(#colorCount)" 
-                  animationDuration={2000}
-                />
+                <Area type="monotone" dataKey="count" stroke="#38bdf8" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
         </GlassCard>
 
-        {/* Recent Activity Ticker */}
-        <GlassCard 
-          title="Live Repository Feed" 
-          subtitle="Recent ingestions"
-          noPadding
-        >
+        {/* Recent feed — fix: use file_name and confirmed_type */}
+        <GlassCard title="Live Repository Feed" subtitle="Recent ingestions" noPadding>
           <div className="divide-y divide-white/5">
             {recentDocs?.map((doc, idx) => (
               <motion.div
@@ -163,13 +134,15 @@ export default function DashboardPage() {
                       <FileText size={16} />
                     </div>
                     <div>
-                      <p className="text-sm font-medium text-white truncate max-w-[120px]">{doc.filename}</p>
-                      <p className="text-[10px] text-gray-500 font-mono uppercase">{doc.doc_type?.replace('_', ' ') ?? 'Unclassified'}</p>
+                      <p className="text-sm font-medium text-white truncate max-w-[120px]">{doc.file_name}</p>
+                      <p className="text-[10px] text-gray-500 font-mono uppercase">
+                        {(doc.confirmed_type ?? doc.declared_type ?? 'Unclassified').replace(/_/g, ' ')}
+                      </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
                     <StatusBadge status={doc.status} />
-                    <ArrowRight size={14} className="text-gray-600 opacity-0 group-hover:opacity-100 transition-all translate-x-[-10px] group-hover:translate-x-0" />
+                    <ArrowRight size={14} className="text-gray-600 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
                   </div>
                 </Link>
               </motion.div>
