@@ -107,14 +107,14 @@ async def login(
         )
 
     memberships = await _resolve_user_memberships(user.id, db)
-    if not memberships:
+    if not memberships and not user.is_superuser:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="No active organisation membership found",
         )
 
-    target_org_id = payload.org_id or memberships[0]
-    if target_org_id not in memberships:
+    target_org_id = payload.org_id or (memberships[0] if memberships else user.org_id)
+    if not user.is_superuser and target_org_id not in memberships:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Requested org not available"
         )
@@ -147,12 +147,15 @@ async def switch_org(
 
 @router.get("/me", response_model=CurrentUserResponse)
 async def me(auth: AuthContext = Depends(get_auth_context)) -> CurrentUserResponse:
+    active_org_role = auth.active_org_role.value if auth.active_org_role else None
     return CurrentUserResponse(
         user_id=auth.user.id,
         email=auth.user.email,
         full_name=auth.user.full_name,
         is_superuser=auth.user.is_superuser,    # now included
         active_org_id=auth.active_org_id,
+        active_org_role=active_org_role,
+        can_process_documents=auth.user.is_superuser or active_org_role in {"owner", "admin"},
         memberships=sorted(auth.memberships, key=str),
         authenticated_at=auth.authenticated_at,
     )

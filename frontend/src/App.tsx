@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/authStore'
+import { isSuperadmin } from '@/lib/permissions'
 
 // Layouts
 import AppLayout from '@/layouts/AppLayout'
@@ -38,62 +39,69 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { token, user } = useAuthStore()
   if (!token) return <Navigate to="/login" replace />
-  // Fixed: use is_superuser (matches AuthUser interface and backend /me response)
-  if (!user?.is_superuser) return <Navigate to="/app" replace />
+  if (!isSuperadmin(user)) return <Navigate to="/app" replace />
   return <>{children}</>
+}
+
+function HomeRoute() {
+  const { token, user } = useAuthStore()
+  if (!token) return <Navigate to="/login" replace />
+  return <Navigate to={isSuperadmin(user) ? '/admin' : '/app'} replace />
 }
 
 export default function App() {
   return (
-    <>
+    <div className="relative min-h-screen overflow-hidden">
       <LavaLampBackground />
-      <Routes>
-        {/* Auth */}
-        <Route element={<AuthLayout />}>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-        </Route>
+      <div className="relative z-10">
+        <Routes>
+          {/* Auth */}
+          <Route element={<AuthLayout />}>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+          </Route>
 
-        {/* App (org user) */}
-        <Route
-          path="/app"
-          element={
-            <PrivateRoute>
-              <AppLayout />
-            </PrivateRoute>
-          }
-        >
-          <Route index element={<DashboardPage />} />
-          <Route path="documents" element={<DocumentsPage />} />
-          <Route path="documents/:id" element={<DocumentDetailPage />} />
-          <Route path="upload" element={<UploadPage />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="search" element={<SearchPage />} />
-          <Route path="settings" element={<SettingsPage />} />
-        </Route>
+          {/* App (org user) */}
+          <Route
+            path="/app"
+            element={
+              <PrivateRoute>
+                <AppLayout />
+              </PrivateRoute>
+            }
+          >
+            <Route index element={<DashboardPage />} />
+            <Route path="documents" element={<DocumentsPage />} />
+            <Route path="documents/:id" element={<DocumentDetailPage />} />
+            <Route path="upload" element={<UploadPage />} />
+            <Route path="analytics" element={<AnalyticsPage />} />
+            <Route path="search" element={<SearchPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
 
-        {/* Super Admin */}
-        <Route
-          path="/admin"
-          element={
-            <AdminRoute>
-              <AdminLayout />
-            </AdminRoute>
-          }
-        >
-          <Route index element={<AdminDashboardPage />} />
-          <Route path="users" element={<AdminUsersPage />} />
-          <Route path="orgs" element={<AdminOrgsPage />} />
-          <Route path="documents" element={<AdminDocumentsPage />} />
-          <Route path="analytics" element={<AdminAnalyticsPage />} />
-          <Route path="billing" element={<AdminBillingPage />} />
-          <Route path="system" element={<AdminSystemPage />} />
-        </Route>
+          {/* Super Admin */}
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminLayout />
+              </AdminRoute>
+            }
+          >
+            <Route index element={<AdminDashboardPage />} />
+            <Route path="users" element={<AdminUsersPage />} />
+            <Route path="orgs" element={<AdminOrgsPage />} />
+            <Route path="documents" element={<AdminDocumentsPage />} />
+            <Route path="analytics" element={<AdminAnalyticsPage />} />
+            <Route path="billing" element={<AdminBillingPage />} />
+            <Route path="system" element={<AdminSystemPage />} />
+          </Route>
 
-        {/* Default */}
-        <Route path="/" element={<Navigate to="/app" replace />} />
-        <Route path="*" element={<Navigate to="/app" replace />} />
-      </Routes>
-    </>
+          {/* Default */}
+          <Route path="/" element={<HomeRoute />} />
+          <Route path="*" element={<HomeRoute />} />
+        </Routes>
+      </div>
+    </div>
   )
 }

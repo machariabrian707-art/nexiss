@@ -1,8 +1,6 @@
 import api from '@/lib/api'
 import { useAuthStore } from '@/stores/authStore'
 
-const BASE = '/api/v1'
-
 export interface LoginPayload { email: string; password: string }
 export interface RegisterPayload {
   email: string
@@ -25,7 +23,7 @@ export const authApi = {
 
   // Must be called AFTER token is stored in the auth store
   me: () => {
-    const { token, activeOrgId } = useAuthStore.getState()
+    const { token } = useAuthStore.getState()
     return api.get('/auth/me', {
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),

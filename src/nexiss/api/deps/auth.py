@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexiss.core.security import decode_token
-from nexiss.db.models.org_membership import MembershipStatus, OrgMembership
+from nexiss.db.models.org_membership import MembershipRole, MembershipStatus, OrgMembership
 from nexiss.db.models.user import User
 from nexiss.db.session import get_db_session
 
@@ -21,8 +21,12 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
 class AuthContext:
     user: User
     active_org_id: UUID
-    memberships: set[UUID]
+    memberships: dict[UUID, MembershipRole]
     authenticated_at: datetime
+
+    @property
+    def active_org_role(self) -> MembershipRole | None:
+        return self.memberships.get(self.active_org_id)
 
 
 async def get_current_user(
@@ -33,14 +37,14 @@ async def get_current_user(
     return ctx.user
 
 
-async def _load_memberships(user_id: UUID, db: AsyncSession) -> set[UUID]:
+async def _load_memberships(user_id: UUID, db: AsyncSession) -> dict[UUID, MembershipRole]:
     result = await db.execute(
-        select(OrgMembership.org_id).where(
+        select(OrgMembership.org_id, OrgMembership.role).where(
             OrgMembership.user_id == user_id,
             OrgMembership.status == MembershipStatus.active,
         )
     )
-    return {row[0] for row in result.all()}
+    return {org_id: role for org_id, role in result.all()}
 
 
 async def get_auth_context(
@@ -74,7 +78,9 @@ async def resolve_auth_context_from_token(token: str, db: AsyncSession) -> AuthC
     memberships = await _load_memberships(user.id, db)
     active_org_id = UUID(org_claim)
 
-    if active_org_id not in memberships:
+    if user.is_superuser and not memberships:
+        memberships = {active_org_id: MembershipRole.owner}
+    elif active_org_id not in memberships:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Token org access revoked"
         )
@@ -116,3 +122,14 @@ async def require_org_context(
         memberships=auth.memberships,
         authenticated_at=auth.authenticated_at,
     )
+
+
+async def require_org_admin(auth: AuthContext = Depends(require_org_context)) -> AuthContext:
+    if auth.user.is_superuser:
+        return auth
+    if auth.active_org_role not in {MembershipRole.owner, MembershipRole.admin}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required for this action",
+        )
+    return auth

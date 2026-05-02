@@ -1,7 +1,22 @@
 {
   "type": "module",
+  "scripts": {
+    "infra:up": "docker compose -f infra/docker-compose.dev.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.dev.yml down",
+    "migrate": "python -m alembic upgrade head",
+    "api": "python -m uvicorn nexiss.main:app --reload",
+    "worker": "python -m celery -A nexiss.worker.celery_app:celery_app worker --loglevel=info --pool=solo",
+    "agents": "npm run worker",
+    "frontend": "npm run dev --prefix frontend",
+    "launch:apps": "concurrently -k -n api,worker,frontend -c blue,magenta,green \"npm run api\" \"npm run worker\" \"npm run frontend\"",
+    "launch": "npm run infra:up && npm run launch:apps",
+    "launch:all": "npm run infra:up && npm run migrate && npm run launch:apps"
+  },
   "dependencies": {
     "dotenv": "^17.4.2",
     "openai": "^6.34.0"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

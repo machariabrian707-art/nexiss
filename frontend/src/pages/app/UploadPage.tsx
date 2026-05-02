@@ -6,6 +6,8 @@ import { Upload, FileText, X, CheckCircle, AlertCircle } from 'lucide-react'
 import clsx from 'clsx'
 import toast from 'react-hot-toast'
 import axios from 'axios'
+import { useAuthStore } from '@/stores/authStore'
+import { canProcessDocuments } from '@/lib/permissions'
 
 // Maps display names to backend declared_type enum values
 const DOC_TYPE_MAP: Record<string, string | undefined> = {
@@ -54,7 +56,21 @@ interface FileState {
 
 export default function UploadPage() {
   const navigate = useNavigate()
+  const user = useAuthStore((s) => s.user)
+  const canManage = canProcessDocuments(user)
   const [files, setFiles] = useState<FileState[]>([])
+
+  if (!canManage) {
+    return (
+      <div className="max-w-2xl space-y-4">
+        <h1 className="text-2xl font-bold text-gray-900">Upload Restricted</h1>
+        <p className="text-sm text-gray-500">
+          Data ingestion and processing are limited to organisation admins and superadmins.
+        </p>
+        <button onClick={() => navigate('/app/documents')} className="btn-primary">Back to Documents</button>
+      </div>
+    )
+  }
 
   const onDrop = useCallback((accepted: File[]) => {
     const newFiles: FileState[] = accepted.map((f) => ({

@@ -41,5 +41,7 @@ class CurrentUserResponse(BaseModel):
     full_name: str | None
     is_superuser: bool            # <— added: frontend needs this to route to /admin
     active_org_id: UUID
+    active_org_role: str | None
+    can_process_documents: bool
     memberships: list[UUID]
     authenticated_at: datetime

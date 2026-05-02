@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nexiss.api.deps.auth import AuthContext, require_org_context
+from nexiss.api.deps.auth import AuthContext, require_org_admin, require_org_context
 from nexiss.db.models.document import Document, DocumentStatus
 from nexiss.db.models.entity import DocumentEntity, Entity
 from nexiss.db.models.processing_job import ProcessingJob, ProcessingJobStatus
@@ -56,7 +56,7 @@ async def _queue_processing_job(db: AsyncSession, document: Document) -> Process
 @router.post("", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def create_document(
     payload: DocumentCreateRequest,
-    auth: AuthContext = Depends(require_org_context),
+    auth: AuthContext = Depends(require_org_admin),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentResponse:
     try:
@@ -220,7 +220,7 @@ async def get_document_entities(
 @router.post("/{document_id}/process", response_model=DocumentProcessResponse)
 async def process_document(
     document_id: UUID,
-    auth: AuthContext = Depends(require_org_context),
+    auth: AuthContext = Depends(require_org_admin),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentProcessResponse:
     row = await db.execute(
@@ -248,7 +248,7 @@ async def process_document(
 @router.post("/{document_id}/retry", response_model=DocumentProcessResponse)
 async def retry_document_processing(
     document_id: UUID,
-    auth: AuthContext = Depends(require_org_context),
+    auth: AuthContext = Depends(require_org_admin),
     db: AsyncSession = Depends(get_db_session),
 ) -> DocumentProcessResponse:
     row = await db.execute(

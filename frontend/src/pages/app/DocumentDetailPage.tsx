@@ -1,7 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { documentsApi } from '@/api/documents'
-import { format } from 'date-fns'
 import { ArrowLeft, RefreshCw, Play, Download, ExternalLink, ShieldCheck, Database, FileText, Activity } from 'lucide-react'
 import StatusBadge from '@/components/ui/StatusBadge'
 import ProgressBar from '@/components/ui/ProgressBar'
@@ -10,11 +9,15 @@ import GlassCard from '@/components/ui/GlassCard'
 import ConfidenceScore from '@/components/ui/ConfidenceScore'
 import DocumentScanner from '@/components/ui/DocumentScanner'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useAuthStore } from '@/stores/authStore'
+import { canProcessDocuments } from '@/lib/permissions'
 
 export default function DocumentDetailPage() {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const user = useAuthStore((s) => s.user)
+  const canManage = canProcessDocuments(user)
 
   const { data: doc, isLoading } = useQuery({
     queryKey: ['document', id],
@@ -61,12 +64,12 @@ export default function DocumentDetailPage() {
         </button>
         <div className="flex items-center gap-3">
           <StatusBadge status={doc.status} />
-          {doc.status === 'uploaded' && (
+          {canManage && doc.status === 'uploaded' && (
             <button onClick={() => processMut.mutate()} className="btn-primary" disabled={processMut.isPending}>
               <Play size={14} /> Run Intelligence
             </button>
           )}
-          {doc.status === 'failed' && (
+          {canManage && doc.status === 'failed' && (
             <button onClick={() => retryMut.mutate()} className="btn-secondary" disabled={retryMut.isPending}>
               <RefreshCw size={14} /> Re-process
             </button>
@@ -82,7 +85,7 @@ export default function DocumentDetailPage() {
         <div className="space-y-6">
           <GlassCard 
             title="Physical Source" 
-            subtitle={doc.filename}
+            subtitle={doc.file_name}
             className="h-[700px] flex flex-col relative"
             noPadding
           >
@@ -105,10 +108,10 @@ export default function DocumentDetailPage() {
             {doc.status === 'processing' && progress && (
               <div className="p-6 bg-white/2 border-t border-white/5">
                 <div className="flex items-center justify-between mb-2">
-                  <p className="text-xs font-bold text-brand-400 font-mono uppercase tracking-widest">{progress.step}</p>
-                  <p className="text-xs font-mono text-gray-500">{progress.progress_pct}%</p>
+                  <p className="text-xs font-bold text-brand-400 font-mono uppercase tracking-widest">{progress.current_step}</p>
+                  <p className="text-xs font-mono text-gray-500">{progress.progress_percentage}%</p>
                 </div>
-                <ProgressBar value={progress.progress_pct} />
+                <ProgressBar value={progress.progress_percentage} />
               </div>
             )}
           </GlassCard>
@@ -119,7 +122,7 @@ export default function DocumentDetailPage() {
           <GlassCard title="Document Metadata">
             <div className="grid grid-cols-2 gap-6">
               {[
-                { label: 'Classification', value: doc.doc_type ?? 'Awaiting ID', icon: ShieldCheck, color: 'text-brand-400' },
+                { label: 'Classification', value: doc.confirmed_type ?? doc.declared_type ?? 'Awaiting ID', icon: ShieldCheck, color: 'text-brand-400' },
                 { label: 'Confidence', value: <ConfidenceScore score={0.94} />, icon: Activity, color: 'text-emerald-400' },
                 { label: 'Pages', value: doc.page_count ?? '1', icon: FileText, color: 'text-gray-400' },
                 { label: 'Data Store', value: 'S3-US-EAST', icon: Database, color: 'text-accent-indigo' },
@@ -140,10 +143,10 @@ export default function DocumentDetailPage() {
             className="flex-1"
             noPadding
           >
-            {doc.extraction_result ? (
+            {doc.extracted_data ? (
               <div className="p-6 space-y-6">
                 <div className="grid grid-cols-1 gap-4">
-                  {Object.entries(doc.extraction_result as Record<string, any>).map(([key, val], idx) => (
+                  {Object.entries(doc.extracted_data as Record<string, unknown>).map(([key, val], idx) => (
                     <motion.div 
                       key={key}
                       initial={{ opacity: 0, x: 10 }}
@@ -162,7 +165,7 @@ export default function DocumentDetailPage() {
                 <div className="pt-6 border-t border-white/5">
                   <h3 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Raw Intelligence Data</h3>
                   <pre className="bg-dark-bg/80 border border-white/5 rounded-xl p-4 text-[10px] text-emerald-400 font-mono overflow-auto max-h-48 scrollbar-hide">
-                    {JSON.stringify(doc.extraction_result, null, 2)}
+                    {JSON.stringify(doc.extracted_data, null, 2)}
                   </pre>
                 </div>
               </div>
@@ -172,9 +175,11 @@ export default function DocumentDetailPage() {
                   <Activity size={32} />
                 </div>
                 <p className="text-sm text-gray-500 font-medium">Knowledge extraction has not been initiated.</p>
-                <button onClick={() => processMut.mutate()} className="mt-4 text-brand-400 text-xs font-bold hover:underline">
-                  Execute Extraction Sequence
-                </button>
+                {canManage && (
+                  <button onClick={() => processMut.mutate()} className="mt-4 text-brand-400 text-xs font-bold hover:underline">
+                    Execute Extraction Sequence
+                  </button>
+                )}
               </div>
             )}
           </GlassCard>

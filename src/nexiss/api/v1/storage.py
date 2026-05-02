@@ -5,7 +5,7 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nexiss.api.deps.auth import AuthContext, require_org_context
+from nexiss.api.deps.auth import AuthContext, require_org_admin, require_org_context
 from nexiss.core.config import get_settings
 from nexiss.db.models.document import Document
 from nexiss.db.session import get_db_session
@@ -29,7 +29,7 @@ settings = get_settings()
 @router.post("/signed-upload", response_model=SignedUploadResponse)
 async def create_signed_upload_url(
     payload: SignedUploadRequest,
-    auth: AuthContext = Depends(require_org_context),
+    auth: AuthContext = Depends(require_org_admin),
 ) -> SignedUploadResponse:
     try:
         validate_content_type(payload.content_type)

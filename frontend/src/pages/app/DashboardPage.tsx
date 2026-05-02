@@ -9,6 +9,8 @@ import StatusBadge from '@/components/ui/StatusBadge'
 import GlassCard from '@/components/ui/GlassCard'
 import { ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from 'recharts'
 import { motion } from 'framer-motion'
+import { useAuthStore } from '@/stores/authStore'
+import { canProcessDocuments } from '@/lib/permissions'
 
 function StatCard({ label, value, icon: Icon, color, trend }: {
   label: string; value: number | string; icon: React.ElementType; color: string; trend?: string
@@ -36,6 +38,8 @@ function StatCard({ label, value, icon: Icon, color, trend }: {
 }
 
 export default function DashboardPage() {
+  const user = useAuthStore((s) => s.user)
+  const canManage = canProcessDocuments(user)
   const { data: overview } = useQuery({
     queryKey: ['analytics', 'overview'],
     queryFn: () => analyticsApi.overview().then((r) => r.data),
@@ -76,9 +80,11 @@ export default function DashboardPage() {
           <p className="text-gray-500 mt-1 max-w-md">Real-time document classification and entity extraction monitoring.</p>
         </div>
         <div className="flex gap-3">
-          <Link to="/app/upload" className="btn-primary">
-            <Zap size={16} /> Ingest Data
-          </Link>
+          {canManage && (
+            <Link to="/app/upload" className="btn-primary">
+              <Zap size={16} /> Ingest Data
+            </Link>
+          )}
           <Link to="/app/search" className="btn-secondary">Discovery</Link>
         </div>
       </div>
@@ -150,7 +156,9 @@ export default function DashboardPage() {
             {!recentDocs?.length && (
               <div className="px-6 py-12 text-center">
                 <p className="text-sm text-gray-500">No active telemetry found.</p>
-                <Link to="/app/upload" className="text-brand-400 text-xs mt-2 inline-block hover:underline">Start Ingestion</Link>
+                {canManage && (
+                  <Link to="/app/upload" className="text-brand-400 text-xs mt-2 inline-block hover:underline">Start Ingestion</Link>
+                )}
               </div>
             )}
           </div>

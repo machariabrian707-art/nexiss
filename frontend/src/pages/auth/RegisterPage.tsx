@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { authApi } from '@/api/auth'
 import toast from 'react-hot-toast'
+import type { AxiosError } from 'axios'
 
 export default function RegisterPage() {
   const navigate = useNavigate()
@@ -15,9 +16,10 @@ export default function RegisterPage() {
       await authApi.register(form)
       toast.success('Account created! Please sign in.')
       navigate('/login')
-    } catch (error: any) {
-      console.error('Registration error:', error.response?.data || error)
-      toast.error(error.response?.data?.detail || 'Registration failed. Check your inputs.')
+    } catch (error: unknown) {
+      const detail = (error as AxiosError<{ detail?: string }>)?.response?.data?.detail
+      console.error('Registration error:', detail ?? error)
+      toast.error(detail ?? 'Registration failed. Check your inputs.')
     } finally {
       setLoading(false)
     }

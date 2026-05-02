@@ -18,9 +18,11 @@ export default function AdminAnalyticsPage() {
     queryFn: () => analyticsApi.dailyProcessing(60).then((r) => r.data),
   })
 
-  const chartData = daily?.map((d) => ({
+  const chartData = daily?.points.map((d) => ({
     ...d,
-    date: format(parseISO(d.date), 'dd MMM'),
+    date: format(parseISO(d.day), 'dd MMM'),
+    documents: d.documents_processed,
+    pages: d.pages_processed,
   })) ?? []
 
   return (

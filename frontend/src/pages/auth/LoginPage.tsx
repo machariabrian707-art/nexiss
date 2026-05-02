@@ -3,6 +3,8 @@ import { useState } from 'react'
 import { authApi } from '@/api/auth'
 import { useAuthStore } from '@/stores/authStore'
 import toast from 'react-hot-toast'
+import { isSuperadmin } from '@/lib/permissions'
+import type { AxiosError } from 'axios'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -28,9 +30,11 @@ export default function LoginPage() {
       setAuth(loginData.access_token, user)
 
       toast.success('Welcome back!')
-      navigate(user.is_superuser ? '/admin' : '/app')
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || 'Invalid email or password'
+      navigate(isSuperadmin(user) ? '/admin' : '/app')
+    } catch (err: unknown) {
+      const msg =
+        (err as AxiosError<{ detail?: string }>)?.response?.data?.detail ??
+        'Invalid email or password'
       toast.error(typeof msg === 'string' ? msg : 'Login failed')
     } finally {
       setLoading(false)

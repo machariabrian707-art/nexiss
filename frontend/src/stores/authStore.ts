@@ -8,6 +8,8 @@ export interface AuthUser {
   full_name: string | null
   is_superuser: boolean
   active_org_id: string  // backend field name
+  active_org_role: 'owner' | 'admin' | 'member' | 'reviewer' | null
+  can_process_documents: boolean
   memberships: string[]
 }
 

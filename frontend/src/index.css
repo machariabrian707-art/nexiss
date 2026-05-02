@@ -11,7 +11,7 @@
   }
   
   body {
-    @apply bg-dark-bg text-gray-200 antialiased font-geist;
+    @apply text-gray-200 antialiased font-geist;
   }
 
   h1, h2, h3, h4, h5, h6 {

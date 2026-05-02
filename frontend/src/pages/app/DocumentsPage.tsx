@@ -5,10 +5,14 @@ import { useState } from 'react'
 import { FileText, RefreshCw } from 'lucide-react'
 import { format } from 'date-fns'
 import StatusBadge from '@/components/ui/StatusBadge'
+import { useAuthStore } from '@/stores/authStore'
+import { canProcessDocuments } from '@/lib/permissions'
 
 const STATUS_FILTERS = ['all', 'uploaded', 'processing', 'completed', 'failed']
 
 export default function DocumentsPage() {
+  const user = useAuthStore((s) => s.user)
+  const canManage = canProcessDocuments(user)
   const [status, setStatus] = useState('all')
   const [page, setPage] = useState(0)
   const limit = 20
@@ -18,7 +22,7 @@ export default function DocumentsPage() {
     queryFn: () =>
       documentsApi.list({
         status: status === 'all' ? undefined : status,
-        skip: page * limit,
+        offset: page * limit,
         limit,
       }).then((r) => r.data),
   })
@@ -34,7 +38,7 @@ export default function DocumentsPage() {
           <button onClick={() => refetch()} className="btn-secondary">
             <RefreshCw size={15} /> Refresh
           </button>
-          <Link to="/app/upload" className="btn-primary">Upload</Link>
+          {canManage && <Link to="/app/upload" className="btn-primary">Upload</Link>}
         </div>
       </div>
 
@@ -79,10 +83,10 @@ export default function DocumentsPage() {
                 <td className="px-5 py-3.5">
                   <Link to={`/app/documents/${doc.id}`} className="flex items-center gap-2 text-brand-600 font-medium hover:underline">
                     <FileText size={14} className="text-gray-400" />
-                    {doc.filename}
+                    {doc.file_name}
                   </Link>
                 </td>
-                <td className="px-5 py-3.5 text-gray-600">{doc.doc_type ?? <span className="text-gray-300">—</span>}</td>
+                <td className="px-5 py-3.5 text-gray-600">{doc.confirmed_type ?? doc.declared_type ?? <span className="text-gray-300">—</span>}</td>
                 <td className="px-5 py-3.5"><StatusBadge status={doc.status} /></td>
                 <td className="px-5 py-3.5 text-gray-600">{doc.page_count ?? '—'}</td>
                 <td className="px-5 py-3.5 text-gray-400">{format(new Date(doc.created_at), 'dd MMM yyyy')}</td>

@@ -28,6 +28,26 @@ uvicorn nexiss.main:app --reload
 pytest
 ```
 
+### One-command launch (API + Worker/Agents + Frontend)
+
+From the project root, this starts local infra and then runs all app processes together:
+
+```bash
+npm install
+npm run launch
+```
+
+What starts:
+- FastAPI API (`uvicorn nexiss.main:app --reload`)
+- Celery worker/agents (`celery -A nexiss.worker.celery_app:celery_app worker`)
+- Frontend (`frontend` Vite dev server)
+
+Useful commands:
+- `npm run launch:apps` — run only API + worker + frontend (no docker infra)
+- `npm run launch:all` — start infra, run DB migrations, then run API + worker + frontend
+- `npm run agents` — run worker/agents only
+- `npm run infra:down` — stop local docker infra
+
 ---
 
 ## Stack
